@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle de Gastos</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- SheetJS (Para gerar o arquivo Excel) -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+</head>
+<body class="bg-neutral-100 text-neutral-800 font-sans antialiased p-4 md:p-8">
+    <div id="app" class="max-w-6xl mx-auto space-y-6">
+        
+        <!-- Cabeçalho -->
+        <header class="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-neutral-200 gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-neutral-900">Controle de Gastos</h1>
+                <p class="text-neutral-500">Mês de referência: <span class="font-semibold text-emerald-600">{{ currentMonthName }}</span></p>
+            </div>
+            
+            <div class="flex items-center gap-6">
+                <div class="text-right">
+                    <p class="text-sm text-neutral-500">Total Investimentos</p>
+                    <p class="text-xl font-bold text-blue-600">{{ formatCurrency(saldoInvestimento) }}</p>
+                </div>
+                <!-- Botão de Exportar para Excel -->
+                <button @click="exportarPlanilha" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition-colors flex items-center gap-2">
+                    <i class="fas fa-file-excel"></i> Fechar Mês
+                </button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Coluna Esquerda: Configurações e Gastos Fixos -->
+            <div class="space-y-6 lg:col-span-1">
+                
+                <!-- Parâmetros da Caixinha -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
+                    <h2 class="text-lg font-bold mb-4 border-b pb-2"><i class="fas fa-wallet mr-2 text-emerald-500"></i>Parâmetros Iniciais</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm text-neutral-600 mb-1">Total Caixinha Base</label>
+                            <div class="relative">
+                                <span class="absolute left-3 top-2 text-neutral-500 font-medium">R$</span>
+                                <input type="number" v-model.number="totalCaixinha"
+                                    class="w-full p-2 pl-9 border rounded focus:ring-2 focus:ring-emerald-500 outline-none">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-neutral-600 mb-1">Saldo Por Semana</label>
+                            <div class="w-full p-2 border rounded bg-neutral-100 text-neutral-600 font-medium select-none">
+                                {{ formatCurrency(saldoPorSemana) }}
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-neutral-600 mb-1">Investimento Inicial</label>
+                            <div class="relative">
+                                <span class="absolute left-3 top-2 text-neutral-500 font-medium">R$</span>
+                                <input type="number" v-model.number="investimentoInicial"
+                                    class="w-full p-2 pl-9 border rounded focus:ring-2 focus:ring-blue-500 outline-none">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gastos Fixos da Caixinha -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
+                    <div class="flex justify-between items-center border-b pb-2 mb-4">
+                        <h2 class="text-lg font-bold"><i class="fas fa-thumbtack mr-2 text-red-500"></i>Gastos Fixos</h2>
+                        <span class="text-sm font-bold text-red-600">{{ formatCurrency(totalFixed) }}</span>
+                    </div>
+                    
+                    <ul class="space-y-3 mb-4">
+                        <li v-if="fixedExpenses.length === 0" class="text-sm text-neutral-400 italic text-center py-2">
+                            Nenhum gasto fixo adicionado.
+                        </li>
+                        <li v-for="gasto in fixedExpenses" :key="gasto.id" class="flex justify-between items-center text-sm bg-neutral-50 p-2 rounded">
+                            <span>{{ gasto.nome }}</span>
+                            <div class="flex items-center gap-3">
+                                <span class="font-semibold">{{ formatCurrency(gasto.valor) }}</span>
+                                <button @click="removeFixed(gasto.id)" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
+                            </div>
+                        </li>
+                    </ul>
+
+                    <div class="flex gap-2">
+                        <!-- Dropdown de Categorias -->
+                        <select v-model="newFixedName" class="w-full p-2 text-sm border rounded outline-none bg-white">
+                            <option disabled value="">Selecione...</option>
+                            <option v-for="opcao in opcoesGastosFixos" :key="opcao" :value="opcao">
+                                {{ opcao }}
+                            </option>
+                        </select>
+
+                        <input type="number" v-model.number="newFixedValue" placeholder="R$" class="w-24 p-2 text-sm border rounded outline-none" @keyup.enter="addFixed">
+                        <button @click="addFixed" class="bg-neutral-800 text-white px-3 rounded hover:bg-neutral-700" title="Adicionar Gasto"><i class="fas fa-plus"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Gastos Investimentos -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
+                    <h2 class="text-lg font-bold mb-4 border-b pb-2"><i class="fas fa-chart-line mr-2 text-blue-500"></i>Saídas de Investimento</h2>
+                    <ul class="space-y-3 mb-4">
+                        <li v-if="investimentosGastos.length === 0" class="text-sm text-neutral-400 italic text-center py-2">
+                            Nenhuma saída registrada.
+                        </li>
+                        <li v-for="inv in investimentosGastos" :key="inv.id" class="flex justify-between items-center text-sm bg-neutral-50 p-2 rounded">
+                            <span>{{ inv.nome }}</span>
+                            <div class="flex items-center gap-3">
+                                <span class="font-semibold">{{ formatCurrency(inv.valor) }}</span>
+                                <button @click="removeInv(inv.id)" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
+                            </div>
+                        </li>
+                    </ul>
+                    <div class="flex gap-2">
+                        <input type="text" v-model="novoInvNome" placeholder="Descrição" class="w-full p-2 text-sm border rounded outline-none" @keyup.enter="addInv">
+                        <input type="number" v-model.number="novoInvValor" placeholder="R$" class="w-24 p-2 text-sm border rounded outline-none" @keyup.enter="addInv">
+                        <button @click="addInv" class="bg-neutral-800 text-white px-3 rounded hover:bg-neutral-700"><i class="fas fa-plus"></i></button>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Coluna Direita: Fluxo Semanal -->
+            <div class="lg:col-span-2">
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
+                    <h2 class="text-lg font-bold mb-4 border-b pb-2"><i class="fas fa-calendar-alt mr-2 text-neutral-700"></i>Planejamento Semanal</h2>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="text-sm text-neutral-500 bg-neutral-50">
+                                    <th class="p-3 border-b rounded-tl-lg">Período</th>
+                                    <th class="p-3 border-b">Caixinha Atual</th>
+                                    <th class="p-3 border-b">Rateio Semana</th>
+                                    <th class="p-3 border-b">Gasto Extra</th>
+                                    <th class="p-3 border-b rounded-tr-lg">Saldo Restante</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(week, index) in weekCalculations" :key="index" class="border-b last:border-0 hover:bg-neutral-50 transition-colors">
+                                    <td class="p-3 text-sm">
+                                        <div class="font-semibold text-neutral-700">Semana {{ index + 1 }}</div>
+                                        <div class="text-xs text-neutral-500">{{ formatDate(week.start) }} - {{ formatDate(week.end) }}</div>
+                                    </td>
+                                    <td class="p-3 font-medium text-neutral-600">{{ formatCurrency(week.saldoCaixinhaAtual) }}</td>
+                                    <td class="p-3 font-semibold text-emerald-600">{{ formatCurrency(week.saldoExtraSemana) }}</td>
+                                    <td class="p-3">
+                                        <input type="number" v-model.number="weeklyExpenses[index]" class="w-24 p-1.5 text-sm border rounded focus:ring-2 focus:ring-red-400 outline-none">
+                                    </td>
+                                    <td class="p-3 font-bold" :class="week.saldoExtraRestante >= 0 ? 'text-emerald-600' : 'text-red-600'">
+                                        {{ formatCurrency(week.saldoExtraRestante) }}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+   <script>
+        // 1. Adicionamos o 'watch' aqui na importação
+        const { createApp, ref, computed, onMounted, watch } = Vue;
+
+        createApp({
+            setup() {
+                // Parâmetros Iniciais
+                const totalCaixinha = ref(800);
+                const investimentoInicial = ref(1877);
+
+                // Setup de Datas
+                const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+                const currentMonthName = computed(() => {
+                    const d = new Date();
+                    return `${monthNames[d.getMonth()]} de ${d.getFullYear()}`;
+                });
+
+                // --- GASTOS FIXOS ---
+                const opcoesGastosFixos = ref([
+                    'Combustível',
+                    'Corte de Cabelo',
+                    'Lavar Carro',
+                    'Whey',
+                    'Personal',
+                    'Assinaturas (Spotify/Netflix)'
+                ]);
+
+                // Começa com a assinatura de 67 preenchida como padrão
+                const fixedExpenses = ref([
+                    { id: Date.now(), nome: 'Assinaturas (Spotify/Netflix)', valor: 67 }
+                ]);
+                
+                const newFixedName = ref('');
+                const newFixedValue = ref('');
+
+                const addFixed = () => {
+                    if(newFixedName.value && newFixedValue.value !== '') {
+                        fixedExpenses.value.push({ 
+                            id: Date.now(), 
+                            nome: newFixedName.value, 
+                            valor: Number(newFixedValue.value) 
+                        });
+                        newFixedName.value = '';
+                        newFixedValue.value = '';
+                    }
+                };
+                
+                const removeFixed = (id) => {
+                    fixedExpenses.value = fixedExpenses.value.filter(x => x.id !== id);
+                };
+                
+                const totalFixed = computed(() => {
+                    return fixedExpenses.value.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
+                });
+
+                // --- LÓGICA DE SEMANAS ---
+                const weeks = ref([]);
+                const weeklyExpenses = ref([]); 
+
+                const generateWeeks = () => {
+                    const now = new Date();
+                    const year = now.getFullYear();
+                    const month = now.getMonth();
+
+                    let w = [];
+                    let currentStart = new Date(year, month, 1);
+                    const lastDay = new Date(year, month + 1, 0);
+
+                    while (currentStart <= lastDay) {
+                        let dayOfWeek = currentStart.getDay();
+                        let excelWeekday = dayOfWeek === 0 ? 7 : dayOfWeek;
+                        let daysToSunday = 7 - excelWeekday;
+
+                        let currentEnd = new Date(currentStart);
+                        currentEnd.setDate(currentStart.getDate() + daysToSunday);
+
+                        if (currentEnd > lastDay) {
+                            currentEnd = new Date(lastDay);
+                        }
+
+                        w.push({
+                            start: new Date(currentStart),
+                            end: new Date(currentEnd)
+                        });
+
+                        currentStart = new Date(currentEnd);
+                        currentStart.setDate(currentStart.getDate() + 1);
+                    }
+                    weeks.value = w;
+                    
+                    // Só zera os gastos semanais se for um mês novo ou se não tiver nada salvo
+                    if (weeklyExpenses.value.length !== w.length) {
+                        weeklyExpenses.value = w.map(() => 0);
+                    }
+                };
+
+                const saldoPorSemana = computed(() => {
+                    let totalSemanas = weeks.value.length;
+                    
+                    if (totalSemanas > 0) {
+                        const primeiraSemana = weeks.value[0];
+                        const ultimaSemana = weeks.value[totalSemanas - 1];
+                        
+                        const primeiraIgual = primeiraSemana.start.getTime() === primeiraSemana.end.getTime();
+                        const ultimaIgual = ultimaSemana.start.getTime() === ultimaSemana.end.getTime();
+
+                        if (primeiraIgual || ultimaIgual) {
+                            totalSemanas -= 1;
+                        }
+                    }
+
+                    if (totalSemanas <= 0) totalSemanas = 1; 
+
+                    return totalCaixinha.value / totalSemanas;
+                });
+
+                const weekCalculations = computed(() => {
+                    let results = [];
+                    let saldoAtual = totalCaixinha.value - totalFixed.value;
+
+                    for (let i = 0; i < weeks.value.length; i++) {
+                        let semanasRestantes = weeks.value.length - i;
+                        let rateioSemana = saldoAtual / semanasRestantes;
+                        let gasto = Number(weeklyExpenses.value[i] || 0);
+                        let restante = rateioSemana - gasto;
+
+                        results.push({
+                            ...weeks.value[i],
+                            saldoCaixinhaAtual: saldoAtual,
+                            saldoExtraSemana: rateioSemana,
+                            saldoExtraRestante: restante
+                        });
+
+                        saldoAtual = saldoAtual - gasto;
+                    }
+                    return results;
+                });
+
+                // --- INVESTIMENTOS ---
+                const investimentosGastos = ref([]);
+                const novoInvNome = ref('');
+                const novoInvValor = ref('');
+
+                const addInv = () => {
+                    if(novoInvNome.value && novoInvValor.value !== '') {
+                        investimentosGastos.value.push({ 
+                            id: Date.now(), 
+                            nome: novoInvNome.value, 
+                            valor: Number(novoInvValor.value) 
+                        });
+                        novoInvNome.value = '';
+                        novoInvValor.value = '';
+                    }
+                };
+                const removeInv = (id) => {
+                    investimentosGastos.value = investimentosGastos.value.filter(x => x.id !== id);
+                };
+                const saldoInvestimento = computed(() => {
+                    let spent = investimentosGastos.value.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
+                    return investimentoInicial.value - spent;
+                });
+
+                // --- LOCAL STORAGE (SALVAR DADOS) ---
+                const carregarDados = () => {
+                    const dadosSalvos = localStorage.getItem('controleGastosData');
+                    if (dadosSalvos) {
+                        const dados = JSON.parse(dadosSalvos);
+                        totalCaixinha.value = dados.totalCaixinha ?? 800;
+                        investimentoInicial.value = dados.investimentoInicial ?? 1877;
+                        
+                        // Se houver gastos fixos salvos, carrega, senão mantém o padrão de 67
+                        if (dados.fixedExpenses && dados.fixedExpenses.length > 0) {
+                            fixedExpenses.value = dados.fixedExpenses;
+                        }
+                        
+                        investimentosGastos.value = dados.investimentosGastos ?? [];
+                        weeklyExpenses.value = dados.weeklyExpenses ?? [];
+                    }
+                };
+
+                const salvarDados = () => {
+                    const dados = {
+                        totalCaixinha: totalCaixinha.value,
+                        investimentoInicial: investimentoInicial.value,
+                        fixedExpenses: fixedExpenses.value,
+                        investimentosGastos: investimentosGastos.value,
+                        weeklyExpenses: weeklyExpenses.value
+                    };
+                    localStorage.setItem('controleGastosData', JSON.stringify(dados));
+                };
+
+                // Fica monitorando as variáveis. Qualquer alteração, ele chama o salvarDados()
+                watch(
+                    [totalCaixinha, investimentoInicial, fixedExpenses, investimentosGastos, weeklyExpenses],
+                    () => { salvarDados(); },
+                    { deep: true }
+                );
+
+                // --- FORMATADORES ---
+                const formatCurrency = (val) => {
+                    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+                };
+                const formatDate = (date) => {
+                    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                };
+
+                // --- EXPORTAÇÃO (SheetJS) ---
+                const exportarPlanilha = () => {
+                    const totalSaidasInvestimentos = investimentosGastos.value.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
+                    const totalGastoExtra = weeklyExpenses.value.reduce((acc, curr) => acc + Number(curr || 0), 0);
+                    const valorQueSobrouCaixinha = totalCaixinha.value - totalFixed.value - totalGastoExtra;
+
+                    const dadosResumo = [
+                        { 'Indicador': 'Total Investido (Inicial)', 'Valor': investimentoInicial.value },
+                        { 'Indicador': 'Saídas de Investimentos', 'Valor': totalSaidasInvestimentos },
+                        { 'Indicador': 'Total Gastos Fixos', 'Valor': totalFixed.value },
+                        { 'Indicador': 'Total Gasto Extra (Caixinha)', 'Valor': totalGastoExtra },
+                        { 'Indicador': 'Valor que Sobrou da Caixinha', 'Valor': valorQueSobrouCaixinha }
+                    ];
+
+                    const dadosSemanas = weekCalculations.value.map((w, index) => ({
+                        'Semana': `Semana ${index + 1}`,
+                        'Período': `${formatDate(w.start)} a ${formatDate(w.end)}`,
+                        'Caixinha Atual': w.saldoCaixinhaAtual,
+                        'Rateio da Semana': w.saldoExtraSemana,
+                        'Gasto Extra': Number(weeklyExpenses.value[index] || 0),
+                        'Saldo Restante': w.saldoExtraRestante
+                    }));
+
+                    const dadosFixos = fixedExpenses.value.map(f => ({
+                        'Descrição': f.nome,
+                        'Valor': f.valor
+                    }));
+                    if(dadosFixos.length > 0) dadosFixos.push({ 'Descrição': 'TOTAL', 'Valor': totalFixed.value });
+
+                    const dadosInvestimentos = investimentosGastos.value.map(i => ({
+                        'Descrição': i.nome,
+                        'Valor': i.valor
+                    }));
+                    if(dadosInvestimentos.length > 0) dadosInvestimentos.push({ 'Descrição': 'TOTAL SAÍDAS', 'Valor': totalSaidasInvestimentos });
+
+                    const wsResumo = XLSX.utils.json_to_sheet(dadosResumo);
+                    const wsSemanas = XLSX.utils.json_to_sheet(dadosSemanas);
+                    const wsFixos = XLSX.utils.json_to_sheet(dadosFixos);
+                    const wsInvestimentos = XLSX.utils.json_to_sheet(dadosInvestimentos);
+
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo do Mês");
+                    XLSX.utils.book_append_sheet(wb, wsSemanas, "Detalhamento Semanal");
+                    XLSX.utils.book_append_sheet(wb, wsFixos, "Gastos Fixos");
+                    XLSX.utils.book_append_sheet(wb, wsInvestimentos, "Investimentos");
+
+                    const nomeArquivo = `Fechamento_${currentMonthName.value.replace(' ', '_')}.xlsx`;
+                    XLSX.writeFile(wb, nomeArquivo);
+                };
+
+                onMounted(() => {
+                    carregarDados(); // Carrega os dados salvos primeiro
+                    generateWeeks(); // Depois gera as semanas mantendo os gastos digitados
+                });
+
+                return {
+                    totalCaixinha, investimentoInicial, currentMonthName,
+                    fixedExpenses, newFixedName, newFixedValue, addFixed, removeFixed, totalFixed, opcoesGastosFixos,
+                    weekCalculations, weeklyExpenses, saldoPorSemana,
+                    investimentosGastos, novoInvNome, novoInvValor, addInv, removeInv, saldoInvestimento,
+                    formatCurrency, formatDate, exportarPlanilha
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
