@@ -44,6 +44,14 @@
                 <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
                     <h2 class="text-lg font-bold mb-4 border-b pb-2"><i class="fas fa-wallet mr-2 text-emerald-500"></i>Parâmetros Iniciais</h2>
                     <div class="space-y-4">
+                         <div>
+                            <label class="block text-sm text-neutral-600 mb-1">Total Gasto Semanal</label>
+                            <div class="relative">
+                                <span class="absolute left-3 top-2 text-neutral-500 font-medium">R$</span>
+                                <input type="number" v-model.number="totalGastosSemanal"
+                                    class="w-full p-2 pl-9 border rounded focus:ring-2 focus:ring-emerald-500 outline-none">
+                            </div>
+                        </div>
                         <div>
                             <label class="block text-sm text-neutral-600 mb-1">Total Caixinha Base</label>
                             <div class="relative">
@@ -175,6 +183,7 @@
             setup() {
                 // Parâmetros Iniciais
                 const totalCaixinha = ref(800);
+                const totalGastosSemanal = ref(800);
                 const investimentoInicial = ref(1877);
 
                 // Setup de Datas
@@ -280,7 +289,7 @@
 
                     if (totalSemanas <= 0) totalSemanas = 1; 
 
-                    return totalCaixinha.value / totalSemanas;
+                    return totalGastosSemanal.value / totalSemanas;
                 });
 
                 const weekCalculations = computed(() => {
@@ -334,6 +343,7 @@
                     const dadosSalvos = localStorage.getItem('controleGastosData');
                     if (dadosSalvos) {
                         const dados = JSON.parse(dadosSalvos);
+                        totalGastosSemanal.value = dados.totalGastosSemanal ?? 800;
                         totalCaixinha.value = dados.totalCaixinha ?? 800;
                         investimentoInicial.value = dados.investimentoInicial ?? 1877;
                         
@@ -349,6 +359,7 @@
 
                 const salvarDados = () => {
                     const dados = {
+                        totalGastosSemanal: totalGastosSemanal.value,
                         totalCaixinha: totalCaixinha.value,
                         investimentoInicial: investimentoInicial.value,
                         fixedExpenses: fixedExpenses.value,
@@ -360,7 +371,7 @@
 
                 // Fica monitorando as variáveis. Qualquer alteração, ele chama o salvarDados()
                 watch(
-                    [totalCaixinha, investimentoInicial, fixedExpenses, investimentosGastos, weeklyExpenses],
+                    [totalGastosSemanal,totalCaixinha, investimentoInicial, fixedExpenses, investimentosGastos, weeklyExpenses],
                     () => { salvarDados(); },
                     { deep: true }
                 );
@@ -429,7 +440,7 @@
                 });
 
                 return {
-                    totalCaixinha, investimentoInicial, currentMonthName,
+                    totalGastosSemanal,totalCaixinha, investimentoInicial, currentMonthName,
                     fixedExpenses, newFixedName, newFixedValue, addFixed, removeFixed, totalFixed, opcoesGastosFixos,
                     weekCalculations, weeklyExpenses, saldoPorSemana,
                     investimentosGastos, novoInvNome, novoInvValor, addInv, removeInv, saldoInvestimento,
