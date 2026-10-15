@@ -10,36 +10,45 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <!-- Font Awesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <!-- SheetJS (Para gerar o arquivo Excel) -->
-    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <!-- Supabase (banco de dados gratuito) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body class="bg-neutral-100 text-neutral-800 font-sans antialiased p-4 md:p-8">
     <div id="app" class="max-w-6xl mx-auto space-y-6">
-        
+
         <!-- Cabeçalho -->
         <header class="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-neutral-200 gap-4">
             <div>
                 <h1 class="text-2xl font-bold text-neutral-900">Controle de Gastos</h1>
-                <p class="text-neutral-500">Mês de referência: <span class="font-semibold text-emerald-600">{{ currentMonthName }}</span></p>
+                <p class="text-neutral-500">Mês de referência: <span class="font-semibold text-emerald-600">{{ selectedMonthName }}</span></p>
+                <p v-if="sbConfigurado && usuario" class="text-xs mt-1 flex items-center gap-3">
+                    <span :class="syncInfo.cor"><i :class="syncInfo.icone" class="mr-1"></i>{{ syncInfo.texto }}</span>
+                    <button @click="sair" class="text-neutral-400 hover:text-neutral-600 underline">sair</button>
+                </p>
             </div>
-            
-            <div class="flex items-center gap-6">
-                <div class="text-right">
-                    <p class="text-sm text-neutral-500">Total Investimentos</p>
-                    <p class="text-xl font-bold text-blue-600">{{ formatCurrency(saldoInvestimento) }}</p>
-                </div>
-                <!-- Botão de Exportar para Excel -->
-                <button @click="exportarPlanilha" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition-colors flex items-center gap-2">
-                    <i class="fas fa-file-excel"></i> Fechar Mês
-                </button>
-            </div>
+
+            <div class="text-right">
+                <p class="text-sm text-neutral-500">Total Investimentos</p>
+                <p class="text-xl font-bold text-blue-600">{{ formatCurrency(saldoInvestimento) }}</p>            </div>
         </header>
 
+        <!-- Navegação entre meses -->
+        <nav class="flex gap-2 overflow-x-auto pb-1">
+            <button v-for="tab in monthTabs" :key="tab.key" @click="selecionarMes(tab.key)"
+                :class="tab.key === selectedKey
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow'
+                    : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-50'"
+                class="shrink-0 px-4 py-2 rounded-lg border text-sm font-semibold transition-colors flex flex-col items-center leading-tight">
+                <span>{{ tab.label }}</span>
+                <span class="text-[10px] font-normal opacity-80">{{ tab.tag || '&nbsp;' }}</span>
+            </button>
+        </nav>
+
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
+
             <!-- Coluna Esquerda: Configurações e Gastos Fixos -->
             <div class="space-y-6 lg:col-span-1">
-                
+
                 <!-- Parâmetros da Caixinha -->
                 <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
                     <h2 class="text-lg font-bold mb-4 border-b pb-2"><i class="fas fa-wallet mr-2 text-emerald-500"></i>Parâmetros Iniciais</h2>
@@ -83,20 +92,32 @@
                         <h2 class="text-lg font-bold"><i class="fas fa-thumbtack mr-2 text-red-500"></i>Gastos Fixos</h2>
                         <span class="text-sm font-bold text-red-600">{{ formatCurrency(totalFixed) }}</span>
                     </div>
-                    
-                    <ul class="space-y-3 mb-4">
-                        <li v-if="fixedExpenses.length === 0" class="text-sm text-neutral-400 italic text-center py-2">
-                            Nenhum gasto fixo adicionado.
-                        </li>
-                        <li v-for="gasto in fixedExpenses" :key="gasto.id" class="flex justify-between items-center text-sm bg-neutral-50 p-2 rounded">
-                            <span>{{ gasto.nome }}</span>
-                            <div class="flex items-center gap-3">
-                                <span class="font-semibold">{{ formatCurrency(gasto.valor) }}</span>
-                                <button @click="removeFixed(gasto.id)" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
-                            </div>
-                        </li>
-                    </ul>
 
+                    <p v-if="fixedExpenses.length === 0" class="text-sm text-neutral-400 italic text-center py-2 mb-2">Nenhum gasto fixo adicionado.</p>
+                    <div class="space-y-3 mb-4">
+                        <div v-for="grupo in fixedGroups" :key="grupo.key" :class="grupo.box" class="rounded-xl border p-3">
+                            <div class="flex justify-between items-baseline mb-2">
+                                <span class="text-xs font-semibold uppercase tracking-wide" :class="grupo.titulo"><i :class="grupo.icone" class="mr-1"></i>{{ grupo.nome }}</span>
+                                <span class="text-base font-bold" :class="grupo.valor">{{ formatCurrency(grupo.total) }}</span>
+                            </div>
+                            <ul class="space-y-2">
+                                <li v-if="grupo.itens.length === 0" class="text-xs text-neutral-400 italic text-center py-1">Vazio</li>
+                                <li v-for="gasto in grupo.itens" :key="gasto.id" class="flex justify-between items-center text-sm bg-white/70 p-2 rounded">
+                                    <span>{{ gasto.nome }}</span>
+                                    <div class="flex items-center gap-3">
+                                        <span class="font-semibold">{{ formatCurrency(gasto.valor) }}</span>
+                                        <button @click="alternarStatus(gasto)" :title="gasto.status === 'pendente' ? 'Marcar como gasto' : 'Voltar para futuros'" class="text-neutral-400 hover:text-emerald-600"><i :class="gasto.status === 'pendente' ? 'fas fa-check' : 'fas fa-rotate-left'"></i></button>
+                                        <button @click="removeFixed(gasto.id)" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
+                                    </div>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2 mb-2 text-xs">
+                        <button @click="newFixedStatus = 'pendente'" :class="newFixedStatus === 'pendente' ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-white text-neutral-500 border-neutral-200'" class="px-3 py-1 rounded-full border font-semibold">Futuro</button>
+                        <button @click="newFixedStatus = 'pago'" :class="newFixedStatus === 'pago' ? 'bg-red-100 text-red-800 border-red-300' : 'bg-white text-neutral-500 border-neutral-200'" class="px-3 py-1 rounded-full border font-semibold">Já gasto</button>
+                    </div>
                     <div class="flex gap-2">
                         <!-- Dropdown de Categorias -->
                         <select v-model="newFixedName" class="w-full p-2 text-sm border rounded outline-none bg-white">
@@ -110,22 +131,34 @@
                         <button @click="addFixed" class="bg-neutral-800 text-white px-3 rounded hover:bg-neutral-700" title="Adicionar Gasto"><i class="fas fa-plus"></i></button>
                     </div>
                 </div>
-                
+
                 <!-- Gastos Investimentos -->
                 <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
                     <h2 class="text-lg font-bold mb-4 border-b pb-2"><i class="fas fa-chart-line mr-2 text-blue-500"></i>Saídas de Investimento</h2>
-                    <ul class="space-y-3 mb-4">
-                        <li v-if="investimentosGastos.length === 0" class="text-sm text-neutral-400 italic text-center py-2">
-                            Nenhuma saída registrada.
-                        </li>
-                        <li v-for="inv in investimentosGastos" :key="inv.id" class="flex justify-between items-center text-sm bg-neutral-50 p-2 rounded">
-                            <span>{{ inv.nome }}</span>
-                            <div class="flex items-center gap-3">
-                                <span class="font-semibold">{{ formatCurrency(inv.valor) }}</span>
-                                <button @click="removeInv(inv.id)" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
+                    <p v-if="investimentosGastos.length === 0" class="text-sm text-neutral-400 italic text-center py-2 mb-2">Nenhuma saída registrada.</p>
+                    <div class="space-y-3 mb-4">
+                        <div v-for="grupo in invGroups" :key="grupo.key" :class="grupo.box" class="rounded-xl border p-3">
+                            <div class="flex justify-between items-baseline mb-2">
+                                <span class="text-xs font-semibold uppercase tracking-wide" :class="grupo.titulo"><i :class="grupo.icone" class="mr-1"></i>{{ grupo.nome }}</span>
+                                <span class="text-base font-bold" :class="grupo.valor">{{ formatCurrency(grupo.total) }}</span>
                             </div>
-                        </li>
-                    </ul>
+                            <ul class="space-y-2">
+                                <li v-if="grupo.itens.length === 0" class="text-xs text-neutral-400 italic text-center py-1">Vazio</li>
+                                <li v-for="inv in grupo.itens" :key="inv.id" class="flex justify-between items-center text-sm bg-white/70 p-2 rounded">
+                                    <span>{{ inv.nome }}</span>
+                                    <div class="flex items-center gap-3">
+                                        <span class="font-semibold">{{ formatCurrency(inv.valor) }}</span>
+                                        <button @click="alternarStatus(inv)" :title="inv.status === 'pendente' ? 'Marcar como já saiu' : 'Voltar para pendentes'" class="text-neutral-400 hover:text-emerald-600"><i :class="inv.status === 'pendente' ? 'fas fa-check' : 'fas fa-rotate-left'"></i></button>
+                                        <button @click="removeInv(inv.id)" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
+                                    </div>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="flex gap-2 mb-2 text-xs">
+                        <button @click="novoInvStatus = 'pendente'" :class="novoInvStatus === 'pendente' ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-white text-neutral-500 border-neutral-200'" class="px-3 py-1 rounded-full border font-semibold">Pendente</button>
+                        <button @click="novoInvStatus = 'pago'" :class="novoInvStatus === 'pago' ? 'bg-blue-100 text-blue-800 border-blue-300' : 'bg-white text-neutral-500 border-neutral-200'" class="px-3 py-1 rounded-full border font-semibold">Já saiu</button>
+                    </div>
                     <div class="flex gap-2">
                         <input type="text" v-model="novoInvNome" placeholder="Descrição" class="w-full p-2 text-sm border rounded outline-none" @keyup.enter="addInv">
                         <input type="number" v-model.number="novoInvValor" placeholder="R$" class="w-24 p-2 text-sm border rounded outline-none" @keyup.enter="addInv">
@@ -139,7 +172,7 @@
             <div class="lg:col-span-2">
                 <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
                     <h2 class="text-lg font-bold mb-4 border-b pb-2"><i class="fas fa-calendar-alt mr-2 text-neutral-700"></i>Planejamento Semanal</h2>
-                    
+
                     <div class="overflow-x-auto">
                         <table class="w-full text-left border-collapse">
                             <thead>
@@ -173,25 +206,119 @@
             </div>
 
         </div>
+        <!-- Tela de login (só aparece se o banco estiver configurado) -->
+        <div v-if="precisaLogin" class="fixed inset-0 !mt-0 bg-neutral-100 z-50 flex items-center justify-center p-4">
+            <form @submit.prevent="entrar" class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200 w-full max-w-sm space-y-4">
+                <h2 class="text-lg font-bold"><i class="fas fa-lock mr-2 text-emerald-500"></i>Entrar</h2>
+                <div>
+                    <label class="block text-sm text-neutral-600 mb-1">E-mail</label>
+                    <input type="email" v-model="loginEmail" required autocomplete="username"
+                        class="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm text-neutral-600 mb-1">Senha</label>
+                    <input type="password" v-model="loginSenha" required autocomplete="current-password"
+                        class="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500 outline-none">
+                </div>
+                <p v-if="loginErro" class="text-sm text-red-600">{{ loginErro }}</p>
+                <button type="submit" :disabled="carregandoLogin"
+                    class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-lg transition-colors disabled:opacity-60">
+                    {{ carregandoLogin ? 'Entrando...' : 'Entrar' }}
+                </button>
+                <button type="button" @click="modoLocal = true" class="w-full text-xs text-neutral-400 hover:text-neutral-600 underline">
+                    Continuar só neste navegador (sem sincronizar)
+                </button>
+            </form>
+        </div>
     </div>
 
    <script>
-        // 1. Adicionamos o 'watch' aqui na importação
+        // --- CONFIGURAÇÃO DO BANCO (Supabase) ---
+        // Cole aqui a URL e a chave pública (anon/publishable) do seu projeto.
+        // Se ficarem vazias, a página funciona só com o salvamento do navegador, como antes.
+        const SUPABASE_URL = 'https://njbwilosguhbhsfbctxy.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_oazbuSvY_OLLnFAKrQ1oqA_J1vyTa8P';
+
         const { createApp, ref, computed, onMounted, watch } = Vue;
 
         createApp({
             setup() {
+                // --- CONSTANTES DE MESES ---
+                const STORAGE_KEY = 'controleGastosMeses';
+                const LEGACY_KEY = 'controleGastosData'; // formato antigo (um mês só)
+                const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+                const keyOf = (year, month) => `${year}-${String(month + 1).padStart(2, '0')}`;
+                const parseKey = (key) => {
+                    const [y, m] = key.split('-').map(Number);
+                    return { year: y, month: m - 1 };
+                };
+                const addMonths = (key, n) => {
+                    const { year, month } = parseKey(key);
+                    const d = new Date(year, month + n, 1);
+                    return keyOf(d.getFullYear(), d.getMonth());
+                };
+
+                const hoje = new Date();
+                const currentKey = keyOf(hoje.getFullYear(), hoje.getMonth());
+
+                // Todos os meses salvos: { '2026-10': { ...dados }, ... }
+                const store = ref({});
+                const selectedKey = ref(currentKey);
+
+                // --- BANCO DE DADOS: estado ---
+                const sbConfigurado = !!(SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase);
+                const sb = sbConfigurado ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+                const usuario = ref(null);
+                const verificandoSessao = ref(sbConfigurado);
+                const modoLocal = ref(false);
+                const statusSync = ref('');
+                const loginEmail = ref('');
+                const loginSenha = ref('');
+                const loginErro = ref('');
+                const carregandoLogin = ref(false);
+
+                const precisaLogin = computed(() =>
+                    sbConfigurado && !verificandoSessao.value && !usuario.value && !modoLocal.value
+                );
+                const syncInfo = computed(() => {
+                    const mapa = {
+                        pendente:      { texto: 'salvando…',                    cor: 'text-amber-600',   icone: 'fas fa-cloud-arrow-up' },
+                        sincronizando: { texto: 'sincronizando…',               cor: 'text-amber-600',   icone: 'fas fa-rotate fa-spin' },
+                        salvo:         { texto: 'sincronizado',                 cor: 'text-emerald-600', icone: 'fas fa-check' },
+                        erro:          { texto: 'sem conexão, salvo só aqui',   cor: 'text-red-600',     icone: 'fas fa-triangle-exclamation' }
+                    };
+                    return mapa[statusSync.value] || { texto: 'conectado', cor: 'text-neutral-500', icone: 'fas fa-cloud' };
+                });
+                let pristine = null; // snapshot de um mês aberto mas ainda não editado
+
+                const selectedMonthName = computed(() => {
+                    const { year, month } = parseKey(selectedKey.value);
+                    return `${monthNames[month]} de ${year}`;
+                });
+
+                // Abas: meses anteriores já salvos + mês atual + 2 meses seguintes
+                const monthTabs = computed(() => {
+                    const keys = new Set([
+                        ...Object.keys(store.value).filter(k => k < currentKey),
+                        currentKey,
+                        addMonths(currentKey, 1),
+                        addMonths(currentKey, 2)
+                    ]);
+                    return [...keys].sort().map(k => {
+                        const { year, month } = parseKey(k);
+                        return {
+                            key: k,
+                            label: `${monthNames[month].slice(0, 3)}/${String(year).slice(2)}`,
+                            tag: k === currentKey ? 'atual' : (k > currentKey ? 'planejar' : 'fechado')
+                        };
+                    });
+                });
+
                 // Parâmetros Iniciais
                 const totalCaixinha = ref(800);
                 const totalGastosSemanal = ref(800);
                 const investimentoInicial = ref(1877);
-
-                // Setup de Datas
-                const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-                const currentMonthName = computed(() => {
-                    const d = new Date();
-                    return `${monthNames[d.getMonth()]} de ${d.getFullYear()}`;
-                });
 
                 // --- GASTOS FIXOS ---
                 const opcoesGastosFixos = ref([
@@ -203,43 +330,58 @@
                     'Assinaturas (Spotify/Netflix)'
                 ]);
 
-                // Começa com a assinatura de 67 preenchida como padrão
                 const fixedExpenses = ref([
-                    { id: Date.now(), nome: 'Assinaturas (Spotify/Netflix)', valor: 67 }
+                    { id: Date.now(), nome: 'Assinaturas (Spotify/Netflix)', valor: 67, status: 'pago' }
                 ]);
-                
+
                 const newFixedName = ref('');
                 const newFixedValue = ref('');
+                const newFixedStatus = ref('pendente');
 
                 const addFixed = () => {
                     if(newFixedName.value && newFixedValue.value !== '') {
-                        fixedExpenses.value.push({ 
-                            id: Date.now(), 
-                            nome: newFixedName.value, 
-                            valor: Number(newFixedValue.value) 
+                        fixedExpenses.value.push({
+                            id: Date.now(),
+                            nome: newFixedName.value,
+                            valor: Number(newFixedValue.value),
+                            status: newFixedStatus.value
                         });
                         newFixedName.value = '';
                         newFixedValue.value = '';
                     }
                 };
-                
+
                 const removeFixed = (id) => {
                     fixedExpenses.value = fixedExpenses.value.filter(x => x.id !== id);
                 };
-                
+
+                // O total de gastos fixos continua somando tudo (futuros + já gastos) no cálculo da caixinha
                 const totalFixed = computed(() => {
                     return fixedExpenses.value.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
                 });
 
+                // --- CAIXINHAS (futuro x já gasto) ---
+                const somar = (lista) => lista.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
+                const alternarStatus = (item) => {
+                    item.status = item.status === 'pendente' ? 'pago' : 'pendente';
+                };
+
+                const fixedGroups = computed(() => {
+                    const futuros = fixedExpenses.value.filter(x => x.status === 'pendente');
+                    const gastos = fixedExpenses.value.filter(x => x.status !== 'pendente');
+                    return [
+                        { key: 'pendente', nome: 'Futuros', icone: 'fas fa-hourglass-half', itens: futuros, total: somar(futuros),
+                          box: 'bg-amber-50 border-amber-200', titulo: 'text-amber-700', valor: 'text-amber-700' },
+                        { key: 'pago', nome: 'Já gastos', icone: 'fas fa-circle-check', itens: gastos, total: somar(gastos),
+                          box: 'bg-red-50 border-red-100', titulo: 'text-red-700', valor: 'text-red-600' }
+                    ];
+                });
+
                 // --- LÓGICA DE SEMANAS ---
                 const weeks = ref([]);
-                const weeklyExpenses = ref([]); 
+                const weeklyExpenses = ref([]);
 
-                const generateWeeks = () => {
-                    const now = new Date();
-                    const year = now.getFullYear();
-                    const month = now.getMonth();
-
+                const generateWeeks = (year, month) => {
                     let w = [];
                     let currentStart = new Date(year, month, 1);
                     const lastDay = new Date(year, month + 1, 0);
@@ -265,29 +407,24 @@
                         currentStart.setDate(currentStart.getDate() + 1);
                     }
                     weeks.value = w;
-                    
-                    // Só zera os gastos semanais se for um mês novo ou se não tiver nada salvo
-                    if (weeklyExpenses.value.length !== w.length) {
-                        weeklyExpenses.value = w.map(() => 0);
-                    }
                 };
 
                 const saldoPorSemana = computed(() => {
                     let totalSemanas = weeks.value.length;
-                    
+
                     if (totalSemanas > 0) {
                         const primeiraSemana = weeks.value[0];
                         const ultimaSemana = weeks.value[totalSemanas - 1];
-                        
+
                         const primeiraIgual = primeiraSemana.start.getTime() === primeiraSemana.end.getTime();
                         const ultimaIgual = ultimaSemana.start.getTime() === ultimaSemana.end.getTime();
 
-                        if (primeiraIgual || ultimaIgual) {
-                            totalSemanas -= 1;
-                        }
+                        // Cada ponta de 1 dia só é descontada; se as duas forem, desconta as duas
+                        if (primeiraIgual) totalSemanas -= 1;
+                        if (ultimaIgual && weeks.value.length > 1) totalSemanas -= 1;
                     }
 
-                    if (totalSemanas <= 0) totalSemanas = 1; 
+                    if (totalSemanas <= 0) totalSemanas = 1;
 
                     return totalGastosSemanal.value / totalSemanas;
                 });
@@ -318,13 +455,15 @@
                 const investimentosGastos = ref([]);
                 const novoInvNome = ref('');
                 const novoInvValor = ref('');
+                const novoInvStatus = ref('pendente');
 
                 const addInv = () => {
                     if(novoInvNome.value && novoInvValor.value !== '') {
-                        investimentosGastos.value.push({ 
-                            id: Date.now(), 
-                            nome: novoInvNome.value, 
-                            valor: Number(novoInvValor.value) 
+                        investimentosGastos.value.push({
+                            id: Date.now(),
+                            nome: novoInvNome.value,
+                            valor: Number(novoInvValor.value),
+                            status: novoInvStatus.value
                         });
                         novoInvNome.value = '';
                         novoInvValor.value = '';
@@ -333,45 +472,254 @@
                 const removeInv = (id) => {
                     investimentosGastos.value = investimentosGastos.value.filter(x => x.id !== id);
                 };
+                const invGroups = computed(() => {
+                    const pendentes = investimentosGastos.value.filter(x => x.status === 'pendente');
+                    const saidas = investimentosGastos.value.filter(x => x.status !== 'pendente');
+                    return [
+                        { key: 'pendente', nome: 'Pendentes', icone: 'fas fa-hourglass-half', itens: pendentes, total: somar(pendentes),
+                          box: 'bg-amber-50 border-amber-200', titulo: 'text-amber-700', valor: 'text-amber-700' },
+                        { key: 'pago', nome: 'Já saiu', icone: 'fas fa-circle-check', itens: saidas, total: somar(saidas),
+                          box: 'bg-blue-50 border-blue-100', titulo: 'text-blue-700', valor: 'text-blue-600' }
+                    ];
+                });
+
+                // Cálculo original: desconta todas as saídas (pendentes e já saídas)
                 const saldoInvestimento = computed(() => {
                     let spent = investimentosGastos.value.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
                     return investimentoInicial.value - spent;
                 });
 
-                // --- LOCAL STORAGE (SALVAR DADOS) ---
-                const carregarDados = () => {
-                    const dadosSalvos = localStorage.getItem('controleGastosData');
-                    if (dadosSalvos) {
-                        const dados = JSON.parse(dadosSalvos);
-                        totalGastosSemanal.value = dados.totalGastosSemanal ?? 800;
-                        totalCaixinha.value = dados.totalCaixinha ?? 800;
-                        investimentoInicial.value = dados.investimentoInicial ?? 1877;
-                        
-                        // Se houver gastos fixos salvos, carrega, senão mantém o padrão de 67
-                        if (dados.fixedExpenses && dados.fixedExpenses.length > 0) {
-                            fixedExpenses.value = dados.fixedExpenses;
-                        }
-                        
-                        investimentosGastos.value = dados.investimentosGastos ?? [];
-                        weeklyExpenses.value = dados.weeklyExpenses ?? [];
+                // --- MESES: SALVAR / CARREGAR (localStorage) ---
+                const dadosAtuais = () => ({
+                    totalGastosSemanal: totalGastosSemanal.value,
+                    totalCaixinha: totalCaixinha.value,
+                    investimentoInicial: investimentoInicial.value,
+                    fixedExpenses: fixedExpenses.value,
+                    investimentosGastos: investimentosGastos.value,
+                    weeklyExpenses: weeklyExpenses.value
+                });
+
+                const persistir = () => {
+                    try {
+                        localStorage.setItem(STORAGE_KEY, JSON.stringify(store.value));
+                    } catch (e) {
+                        console.warn('Não foi possível salvar no navegador', e);
                     }
                 };
 
-                const salvarDados = () => {
-                    const dados = {
-                        totalGastosSemanal: totalGastosSemanal.value,
-                        totalCaixinha: totalCaixinha.value,
-                        investimentoInicial: investimentoInicial.value,
-                        fixedExpenses: fixedExpenses.value,
-                        investimentosGastos: investimentosGastos.value,
-                        weeklyExpenses: weeklyExpenses.value
+                // Mês novo: herda parâmetros e gastos fixos do último mês salvo antes dele.
+                // O investimento inicial vira o saldo de investimento que sobrou naquele mês.
+                const criarPadrao = (key) => {
+                    const anteriores = Object.keys(store.value).filter(k => k < key).sort();
+                    const prev = store.value[anteriores[anteriores.length - 1]];
+
+                    if (prev) {
+                        const saidas = (prev.investimentosGastos || []).reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
+                        return {
+                            totalGastosSemanal: prev.totalGastosSemanal,
+                            totalCaixinha: prev.totalCaixinha,
+                            investimentoInicial: Number(prev.investimentoInicial || 0) - saidas,
+                            fixedExpenses: (prev.fixedExpenses || []).map(f => ({ ...f, id: Date.now() + Math.random(), status: 'pendente' })),
+                            investimentosGastos: [],
+                            weeklyExpenses: []
+                        };
+                    }
+
+                    return {
+                        totalGastosSemanal: 800,
+                        totalCaixinha: 800,
+                        investimentoInicial: 1877,
+                        fixedExpenses: [{ id: Date.now(), nome: 'Assinaturas (Spotify/Netflix)', valor: 67, status: 'pendente' }],
+                        investimentosGastos: [],
+                        weeklyExpenses: []
                     };
-                    localStorage.setItem('controleGastosData', JSON.stringify(dados));
                 };
 
-                // Fica monitorando as variáveis. Qualquer alteração, ele chama o salvarDados()
+                const carregarMes = (key) => {
+                    const { year, month } = parseKey(key);
+                    generateWeeks(year, month);
+
+                    const salvo = store.value[key];
+                    const d = salvo || criarPadrao(key);
+
+                    totalGastosSemanal.value = d.totalGastosSemanal ?? 800;
+                    totalCaixinha.value = d.totalCaixinha ?? 800;
+                    investimentoInicial.value = d.investimentoInicial ?? 1877;
+                    // Itens salvos antes das caixinhas não têm status: contam como já gastos
+                    fixedExpenses.value = (d.fixedExpenses || []).map(f => ({ ...f, status: f.status || 'pago' }));
+                    investimentosGastos.value = (d.investimentosGastos || []).map(i => ({ ...i, status: i.status || 'pago' }));
+                    weeklyExpenses.value = weeks.value.map((_, i) => Number(d.weeklyExpenses?.[i] || 0));
+
+                    // Mês só visualizado (nunca editado) não é gravado, para não "congelar" valores herdados
+                    pristine = salvo ? null : JSON.stringify(dadosAtuais());
+                };
+
+                // JSON com chaves ordenadas, para comparar conteúdo sem depender da ordem (o banco reordena)
+                const estavel = (o) => JSON.stringify(o, (k, v) =>
+                    (v && typeof v === 'object' && !Array.isArray(v))
+                        ? Object.keys(v).sort().reduce((a, x) => { a[x] = v[x]; return a; }, {})
+                        : v
+                );
+                const ts = (x) => (x ? new Date(x).getTime() : 0);
+
+                const salvarDados = () => {
+                    const key = selectedKey.value;
+                    const snap = JSON.stringify(dadosAtuais());
+                    const existente = store.value[key];
+                    if (!existente && snap === pristine) return;
+                    if (existente) {
+                        const { _atualizadoEm, ...conteudo } = existente;
+                        if (estavel(conteudo) === estavel(JSON.parse(snap))) return; // nada mudou de fato
+                    }
+                    store.value[key] = { ...JSON.parse(snap), _atualizadoEm: new Date().toISOString() };
+                    persistir();
+                    agendarEnvio(key);
+                };
+
+                // --- BANCO DE DADOS: sincronização ---
+                // O navegador continua guardando tudo localmente; o banco é a cópia na nuvem.
+                const filaEnvio = new Set();
+                let timerEnvio = null;
+                let sincInicialOk = false;
+
+                const enviarMes = async (key) => {
+                    const d = store.value[key];
+                    if (!d) return true;
+                    if (!d._atualizadoEm) { d._atualizadoEm = new Date().toISOString(); persistir(); }
+                    const { error } = await sb.from('meses').upsert(
+                        { user_id: usuario.value.id, mes: key, dados: JSON.parse(JSON.stringify(d)), updated_at: d._atualizadoEm },
+                        { onConflict: 'user_id,mes' }
+                    );
+                    return !error;
+                };
+
+                const descarregarFila = async () => {
+                    if (!sb || !usuario.value || filaEnvio.size === 0) return;
+                    statusSync.value = 'sincronizando';
+                    const keys = [...filaEnvio];
+                    filaEnvio.clear();
+                    let tudoCerto = true;
+                    for (const k of keys) {
+                        let ok = false;
+                        try { ok = await enviarMes(k); } catch (e) { ok = false; }
+                        if (!ok) { filaEnvio.add(k); tudoCerto = false; }
+                    }
+                    statusSync.value = tudoCerto ? 'salvo' : 'erro';
+                };
+
+                const agendarEnvio = (key) => {
+                    if (!sb || !usuario.value) return;
+                    filaEnvio.add(key);
+                    statusSync.value = 'pendente';
+                    clearTimeout(timerEnvio);
+                    timerEnvio = setTimeout(descarregarFila, 700);
+                };
+
+                // Ao entrar: traz do banco o que for mais novo e envia o que só existe (ou é mais novo) aqui
+                const sincronizarInicial = async () => {
+                    if (!sb || !usuario.value) return;
+                    statusSync.value = 'sincronizando';
+                    try {
+                        const { data, error } = await sb.from('meses').select('mes, dados, updated_at');
+                        if (error) throw error;
+
+                        const remotos = {};
+                        let mudouLocal = false;
+                        for (const r of data) {
+                            remotos[r.mes] = r;
+                            const local = store.value[r.mes];
+                            const tRemoto = ts(r.dados?._atualizadoEm || r.updated_at);
+                            if (!local || ts(local._atualizadoEm) < tRemoto) {
+                                store.value[r.mes] = r.dados;
+                                mudouLocal = true;
+                            }
+                        }
+                        for (const k of Object.keys(store.value)) {
+                            const r = remotos[k];
+                            if (!r || ts(store.value[k]._atualizadoEm) > ts(r.dados?._atualizadoEm || r.updated_at)) {
+                                filaEnvio.add(k);
+                            }
+                        }
+                        if (mudouLocal) { persistir(); carregarMes(selectedKey.value); }
+
+                        sincInicialOk = true;
+                        statusSync.value = 'salvo';
+                        await descarregarFila();
+                    } catch (e) {
+                        console.warn('Falha ao sincronizar', e);
+                        statusSync.value = 'erro';
+                    }
+                };
+
+                const entrar = async () => {
+                    if (!sb) return;
+                    loginErro.value = '';
+                    carregandoLogin.value = true;
+                    try {
+                        const { data, error } = await sb.auth.signInWithPassword({
+                            email: loginEmail.value.trim(),
+                            password: loginSenha.value
+                        });
+                        if (error) { loginErro.value = 'E-mail ou senha incorretos.'; return; }
+                        usuario.value = data.user;
+                        loginSenha.value = '';
+                    } catch (e) {
+                        loginErro.value = 'Não foi possível conectar. Verifique a internet.';
+                        return;
+                    } finally {
+                        carregandoLogin.value = false;
+                    }
+                    await sincronizarInicial();
+                };
+
+                const sair = async () => {
+                    await descarregarFila();
+                    if (filaEnvio.size > 0 && !confirm('Há alterações que ainda não foram sincronizadas e serão perdidas neste navegador. Sair mesmo assim?')) return;
+                    try { await sb.auth.signOut(); } catch (e) {}
+                    // limpa a cópia local para não deixar seus dados no navegador depois de sair
+                    try { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(LEGACY_KEY); } catch (e) {}
+                    location.reload();
+                };
+
+                const selecionarMes = (key) => {
+                    if (key === selectedKey.value) return;
+                    salvarDados();
+                    selectedKey.value = key;
+                    carregarMes(key);
+                };
+
+                const carregarStore = () => {
+                    try {
+                        const bruto = localStorage.getItem(STORAGE_KEY);
+                        if (bruto) {
+                            store.value = JSON.parse(bruto);
+                            return;
+                        }
+
+                        // Migração: dados do formato antigo viram o mês atual
+                        const legado = localStorage.getItem(LEGACY_KEY);
+                        if (legado) {
+                            const dados = JSON.parse(legado);
+                            store.value[currentKey] = {
+                                totalGastosSemanal: dados.totalGastosSemanal ?? 800,
+                                totalCaixinha: dados.totalCaixinha ?? 800,
+                                investimentoInicial: dados.investimentoInicial ?? 1877,
+                                fixedExpenses: (dados.fixedExpenses && dados.fixedExpenses.length > 0)
+                                    ? dados.fixedExpenses
+                                    : [{ id: Date.now(), nome: 'Assinaturas (Spotify/Netflix)', valor: 67 }],
+                                investimentosGastos: dados.investimentosGastos ?? [],
+                                weeklyExpenses: dados.weeklyExpenses ?? []
+                            };
+                            persistir();
+                        }
+                    } catch (e) {
+                        console.warn('Erro ao ler dados salvos', e);
+                    }
+                };
+
+                // Qualquer alteração no mês aberto é salva automaticamente
                 watch(
-                    [totalGastosSemanal,totalCaixinha, investimentoInicial, fixedExpenses, investimentosGastos, weeklyExpenses],
+                    [totalGastosSemanal, totalCaixinha, investimentoInicial, fixedExpenses, investimentosGastos, weeklyExpenses],
                     () => { salvarDados(); },
                     { deep: true }
                 );
@@ -384,67 +732,39 @@
                     return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
                 };
 
-                // --- EXPORTAÇÃO (SheetJS) ---
-                const exportarPlanilha = () => {
-                    const totalSaidasInvestimentos = investimentosGastos.value.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
-                    const totalGastoExtra = weeklyExpenses.value.reduce((acc, curr) => acc + Number(curr || 0), 0);
-                    const valorQueSobrouCaixinha = totalCaixinha.value - totalFixed.value - totalGastoExtra;
+                onMounted(async () => {
+                    carregarStore();
+                    carregarMes(currentKey);
 
-                    const dadosResumo = [
-                        { 'Indicador': 'Total Investido (Inicial)', 'Valor': investimentoInicial.value },
-                        { 'Indicador': 'Saídas de Investimentos', 'Valor': totalSaidasInvestimentos },
-                        { 'Indicador': 'Total Gastos Fixos', 'Valor': totalFixed.value },
-                        { 'Indicador': 'Total Gasto Extra (Caixinha)', 'Valor': totalGastoExtra },
-                        { 'Indicador': 'Valor que Sobrou da Caixinha', 'Valor': valorQueSobrouCaixinha }
-                    ];
+                    if (!sbConfigurado) return;
 
-                    const dadosSemanas = weekCalculations.value.map((w, index) => ({
-                        'Semana': `Semana ${index + 1}`,
-                        'Período': `${formatDate(w.start)} a ${formatDate(w.end)}`,
-                        'Caixinha Atual': w.saldoCaixinhaAtual,
-                        'Rateio da Semana': w.saldoExtraSemana,
-                        'Gasto Extra': Number(weeklyExpenses.value[index] || 0),
-                        'Saldo Restante': w.saldoExtraRestante
-                    }));
+                    try {
+                        const { data } = await sb.auth.getSession();
+                        if (data.session) usuario.value = data.session.user;
+                    } catch (e) {
+                        console.warn('Falha ao verificar sessão', e);
+                    }
+                    verificandoSessao.value = false;
 
-                    const dadosFixos = fixedExpenses.value.map(f => ({
-                        'Descrição': f.nome,
-                        'Valor': f.valor
-                    }));
-                    if(dadosFixos.length > 0) dadosFixos.push({ 'Descrição': 'TOTAL', 'Valor': totalFixed.value });
+                    if (usuario.value) await sincronizarInicial();
 
-                    const dadosInvestimentos = investimentosGastos.value.map(i => ({
-                        'Descrição': i.nome,
-                        'Valor': i.valor
-                    }));
-                    if(dadosInvestimentos.length > 0) dadosInvestimentos.push({ 'Descrição': 'TOTAL SAÍDAS', 'Valor': totalSaidasInvestimentos });
-
-                    const wsResumo = XLSX.utils.json_to_sheet(dadosResumo);
-                    const wsSemanas = XLSX.utils.json_to_sheet(dadosSemanas);
-                    const wsFixos = XLSX.utils.json_to_sheet(dadosFixos);
-                    const wsInvestimentos = XLSX.utils.json_to_sheet(dadosInvestimentos);
-
-                    const wb = XLSX.utils.book_new();
-                    XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo do Mês");
-                    XLSX.utils.book_append_sheet(wb, wsSemanas, "Detalhamento Semanal");
-                    XLSX.utils.book_append_sheet(wb, wsFixos, "Gastos Fixos");
-                    XLSX.utils.book_append_sheet(wb, wsInvestimentos, "Investimentos");
-
-                    const nomeArquivo = `Fechamento_${currentMonthName.value.replace(' ', '_')}.xlsx`;
-                    XLSX.writeFile(wb, nomeArquivo);
-                };
-
-                onMounted(() => {
-                    carregarDados(); // Carrega os dados salvos primeiro
-                    generateWeeks(); // Depois gera as semanas mantendo os gastos digitados
+                    // Voltou a internet: tenta de novo o que ficou pendente
+                    window.addEventListener('online', () => {
+                        if (!usuario.value) return;
+                        if (sincInicialOk) descarregarFila(); else sincronizarInicial();
+                    });
                 });
 
                 return {
-                    totalGastosSemanal,totalCaixinha, investimentoInicial, currentMonthName,
-                    fixedExpenses, newFixedName, newFixedValue, addFixed, removeFixed, totalFixed, opcoesGastosFixos,
+                    totalGastosSemanal, totalCaixinha, investimentoInicial,
+                    selectedKey, selectedMonthName, monthTabs, selecionarMes,
+                    sbConfigurado, usuario, precisaLogin, modoLocal, syncInfo,
+                    loginEmail, loginSenha, loginErro, carregandoLogin, entrar, sair,
+                    fixedExpenses, newFixedName, newFixedValue, newFixedStatus, addFixed, removeFixed, totalFixed, opcoesGastosFixos,
+                    fixedGroups, invGroups, alternarStatus, novoInvStatus,
                     weekCalculations, weeklyExpenses, saldoPorSemana,
                     investimentosGastos, novoInvNome, novoInvValor, addInv, removeInv, saldoInvestimento,
-                    formatCurrency, formatDate, exportarPlanilha
+                    formatCurrency, formatDate
                 };
             }
         }).mount('#app');
