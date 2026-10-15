@@ -82,6 +82,13 @@
                             </div>
                         </div>
                         <div>
+                            <label class="block text-sm text-neutral-600 mb-1">Semanas Futuras</label>
+                            <div class="w-full p-2 border rounded bg-neutral-100 text-neutral-600 font-medium select-none">
+                                {{ formatCurrency(totalSemanasFuturas) }}
+                            </div>
+                            <p class="text-xs text-neutral-400 mt-1">{{ qtdSemanasFuturas }} {{ qtdSemanasFuturas === 1 ? 'semana' : 'semanas' }} × {{ formatCurrency(saldoPorSemana) }}</p>
+                        </div>
+                        <div>
                             <label class="block text-sm text-neutral-600 mb-1">Investimento Inicial</label>
                             <div class="relative">
                                 <span class="absolute left-3 top-2 text-neutral-500 font-medium">R$</span>
@@ -256,8 +263,8 @@
         // --- CONFIGURAÇÃO DO BANCO (Supabase) ---
         // Cole aqui a URL e a chave pública (anon/publishable) do seu projeto.
         // Se ficarem vazias, a página funciona só com o salvamento do navegador, como antes.
-        const SUPABASE_URL = 'https://njbwilosguhbhsfbctxy.supabase.co';
-        const SUPABASE_ANON_KEY = 'sb_publishable_oazbuSvY_OLLnFAKrQ1oqA_J1vyTa8P';
+        const SUPABASE_URL = '';
+        const SUPABASE_ANON_KEY = '';
 
         const { createApp, ref, computed, onMounted, watch } = Vue;
 
@@ -363,7 +370,7 @@
                 ]);
 
                 const fixedExpenses = ref([
-                    { id: Date.now(), nome: 'Assinaturas (Spotify/Netflix)', valor: 61.8, status: 'pago' }
+                    { id: Date.now(), nome: 'Assinaturas (Spotify/Netflix)', valor: 67, status: 'pago' }
                 ]);
 
                 const newFixedName = ref('');
@@ -461,6 +468,17 @@
                     return totalGastosSemanal.value / totalSemanas;
                 });
 
+                // Semanas Futuras: soma do "Saldo Por Semana" das semanas que começam depois de hoje.
+                // Não conta a semana atual, nem semanas em que início = fim (um dia só).
+                const qtdSemanasFuturas = computed(() => {
+                    const d = new Date();
+                    const hojeMeia = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+                    return weeks.value.filter(w =>
+                        w.start.getTime() > hojeMeia && w.start.getTime() !== w.end.getTime()
+                    ).length;
+                });
+                const totalSemanasFuturas = computed(() => qtdSemanasFuturas.value * saldoPorSemana.value);
+
                 const weekCalculations = computed(() => {
                     let results = [];
                     let saldoAtual = totalCaixinha.value - totalFixed.value;
@@ -544,7 +562,7 @@
                     totalGastosSemanal: 800,
                     totalCaixinha: 800,
                     investimentoInicial: 1877,
-                    fixedExpenses: [{ id: Date.now(), nome: 'Assinaturas (Spotify/Netflix)', valor: 61.8, status: 'pendente' }],
+                    fixedExpenses: [{ id: Date.now(), nome: 'Assinaturas (Spotify/Netflix)', valor: 67, status: 'pendente' }],
                     investimentosGastos: [],
                     weeklyExpenses: []
                 });
@@ -737,7 +755,7 @@
                                 investimentoInicial: dados.investimentoInicial ?? 1877,
                                 fixedExpenses: (dados.fixedExpenses && dados.fixedExpenses.length > 0)
                                     ? dados.fixedExpenses
-                                    : [{ id: Date.now(), nome: 'Assinaturas (Spotify/Netflix)', valor: 61.8 }],
+                                    : [{ id: Date.now(), nome: 'Assinaturas (Spotify/Netflix)', valor: 67 }],
                                 investimentosGastos: dados.investimentosGastos ?? [],
                                 weeklyExpenses: dados.weeklyExpenses ?? []
                             };
@@ -793,7 +811,7 @@
                     loginEmail, loginSenha, loginErro, carregandoLogin, entrar, sair,
                     fixedExpenses, newFixedName, newFixedValue, newFixedStatus, addFixed, removeFixed, totalFixed, opcoesGastosFixos,
                     fixedGroups, invGroups, alternarStatus, novoInvStatus,
-                    weekCalculations, weeklyExpenses, saldoPorSemana,
+                    weekCalculations, weeklyExpenses, saldoPorSemana, qtdSemanasFuturas, totalSemanasFuturas,
                     investimentosGastos, novoInvNome, novoInvValor, addInv, removeInv, saldoInvestimento,
                     formatCurrency, formatDate
                 };
