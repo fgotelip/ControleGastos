@@ -50,13 +50,14 @@
             </button>
         </nav>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Telas grandes (6 colunas): linha 1 = Parâmetros + Planejamento Semanal; linha 2 = Gastos Fixos + Saídas de Investimento lado a lado -->
+        <div class="grid grid-cols-1 lg:grid-cols-6 gap-6">
 
             <!-- Coluna Esquerda: Configurações e Gastos Fixos -->
-            <div class="space-y-6 lg:col-span-1">
+            <div class="contents">
 
                 <!-- Parâmetros da Caixinha -->
-                <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200 lg:col-span-2 lg:order-1">
                     <h2 class="text-lg font-bold mb-4 border-b pb-2"><i class="fas fa-wallet mr-2 text-emerald-500"></i>Parâmetros Iniciais</h2>
                     <div class="space-y-4">
                          <div>
@@ -100,7 +101,7 @@
                 </div>
 
                 <!-- Gastos Fixos da Caixinha -->
-                <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200 lg:col-span-3 lg:order-3">
                     <div class="flex justify-between items-center border-b pb-2 mb-4">
                         <h2 class="text-lg font-bold"><i class="fas fa-thumbtack mr-2 text-red-500"></i>Gastos Fixos</h2>
                         <span class="text-sm font-bold text-red-600">{{ formatCurrency(totalFixed) }}</span>
@@ -153,7 +154,7 @@
                 </div>
 
                 <!-- Gastos Investimentos -->
-                <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200 lg:col-span-3 lg:order-4">
                     <h2 class="text-lg font-bold mb-4 border-b pb-2"><i class="fas fa-chart-line mr-2 text-blue-500"></i>Saídas de Investimento</h2>
                     <p v-if="investimentosGastos.length === 0" class="text-sm text-neutral-400 italic text-center py-2 mb-2">Nenhuma saída registrada.</p>
                     <div class="space-y-3 mb-4">
@@ -196,8 +197,8 @@
             </div>
 
             <!-- Coluna Direita: Fluxo Semanal -->
-            <div class="lg:col-span-2">
-                <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
+            <div class="lg:col-span-4 lg:order-2">
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200 h-full">
                     <h2 class="text-lg font-bold mb-4 border-b pb-2"><i class="fas fa-calendar-alt mr-2 text-neutral-700"></i>Planejamento Semanal</h2>
 
                     <div class="overflow-x-auto">
