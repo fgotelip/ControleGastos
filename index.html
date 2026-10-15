@@ -25,12 +25,18 @@
                     <span :class="syncInfo.cor"><i :class="syncInfo.icone" class="mr-1"></i>{{ syncInfo.texto }}</span>
                     <button @click="sair" class="text-neutral-400 hover:text-neutral-600 underline">sair</button>
                 </p>
+                <p v-if="statusSync === 'erro' && ultimoErro" class="text-xs text-red-600 mt-1 max-w-md">Erro do banco: {{ ultimoErro }}</p>
             </div>
 
             <div class="text-right">
                 <p class="text-sm text-neutral-500">Total Investimentos</p>
                 <p class="text-xl font-bold text-blue-600">{{ formatCurrency(saldoInvestimento) }}</p>            </div>
         </header>
+
+        <!-- Aviso: dados não estão indo para o banco -->
+        <div v-if="avisoConfig" class="bg-amber-50 border border-amber-200 text-amber-800 text-sm p-3 rounded-lg">
+            <i class="fas fa-triangle-exclamation mr-2"></i>{{ avisoConfig }}
+        </div>
 
         <!-- Navegação entre meses -->
         <nav class="flex gap-2 overflow-x-auto pb-1">
@@ -102,13 +108,20 @@
                             </div>
                             <ul class="space-y-2">
                                 <li v-if="grupo.itens.length === 0" class="text-xs text-neutral-400 italic text-center py-1">Vazio</li>
-                                <li v-for="gasto in grupo.itens" :key="gasto.id" class="flex justify-between items-center text-sm bg-white/70 p-2 rounded">
-                                    <span>{{ gasto.nome }}</span>
-                                    <div class="flex items-center gap-3">
-                                        <span class="font-semibold">{{ formatCurrency(gasto.valor) }}</span>
-                                        <button @click="alternarStatus(gasto)" :title="gasto.status === 'pendente' ? 'Marcar como gasto' : 'Voltar para futuros'" class="text-neutral-400 hover:text-emerald-600"><i :class="gasto.status === 'pendente' ? 'fas fa-check' : 'fas fa-rotate-left'"></i></button>
-                                        <button @click="removeFixed(gasto.id)" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
+                                <li v-for="gasto in grupo.itens" :key="gasto.id" class="text-sm bg-white/70 p-2 rounded">
+                                    <div class="flex justify-between items-center gap-2">
+                                        <span>{{ gasto.nome }}</span>
+                                        <div class="flex items-center gap-3">
+                                            <span class="font-semibold">{{ formatCurrency(gasto.valor) }}</span>
+                                            <button @click="removeFixed(gasto.id)" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
+                                        </div>
                                     </div>
+                                    <button @click="alternarStatus(gasto)"
+                                        :title="gasto.status === 'pendente' ? 'Clique para marcar como já gasto' : 'Clique para voltar para futuro'"
+                                        :class="gasto.status === 'pendente' ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200' : 'bg-red-100 text-red-800 border-red-300 hover:bg-red-200'"
+                                        class="mt-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-semibold whitespace-nowrap transition-colors">
+                                        <i class="fas fa-arrows-rotate mr-1"></i>{{ gasto.status === 'pendente' ? 'Futuro' : 'Já gasto' }}
+                                    </button>
                                 </li>
                             </ul>
                         </div>
@@ -144,13 +157,20 @@
                             </div>
                             <ul class="space-y-2">
                                 <li v-if="grupo.itens.length === 0" class="text-xs text-neutral-400 italic text-center py-1">Vazio</li>
-                                <li v-for="inv in grupo.itens" :key="inv.id" class="flex justify-between items-center text-sm bg-white/70 p-2 rounded">
-                                    <span>{{ inv.nome }}</span>
-                                    <div class="flex items-center gap-3">
-                                        <span class="font-semibold">{{ formatCurrency(inv.valor) }}</span>
-                                        <button @click="alternarStatus(inv)" :title="inv.status === 'pendente' ? 'Marcar como já saiu' : 'Voltar para pendentes'" class="text-neutral-400 hover:text-emerald-600"><i :class="inv.status === 'pendente' ? 'fas fa-check' : 'fas fa-rotate-left'"></i></button>
-                                        <button @click="removeInv(inv.id)" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
+                                <li v-for="inv in grupo.itens" :key="inv.id" class="text-sm bg-white/70 p-2 rounded">
+                                    <div class="flex justify-between items-center gap-2">
+                                        <span>{{ inv.nome }}</span>
+                                        <div class="flex items-center gap-3">
+                                            <span class="font-semibold">{{ formatCurrency(inv.valor) }}</span>
+                                            <button @click="removeInv(inv.id)" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
+                                        </div>
                                     </div>
+                                    <button @click="alternarStatus(inv)"
+                                        :title="inv.status === 'pendente' ? 'Clique para marcar como já saiu' : 'Clique para voltar para pendente'"
+                                        :class="inv.status === 'pendente' ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200' : 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200'"
+                                        class="mt-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-semibold whitespace-nowrap transition-colors">
+                                        <i class="fas fa-arrows-rotate mr-1"></i>{{ inv.status === 'pendente' ? 'Pendente' : 'Já saiu' }}
+                                    </button>
                                 </li>
                             </ul>
                         </div>
@@ -236,8 +256,8 @@
         // --- CONFIGURAÇÃO DO BANCO (Supabase) ---
         // Cole aqui a URL e a chave pública (anon/publishable) do seu projeto.
         // Se ficarem vazias, a página funciona só com o salvamento do navegador, como antes.
-        const SUPABASE_URL = 'https://njbwilosguhbhsfbctxy.supabase.co';
-        const SUPABASE_ANON_KEY = 'sb_publishable_oazbuSvY_OLLnFAKrQ1oqA_J1vyTa8P';
+        const SUPABASE_URL = '';
+        const SUPABASE_ANON_KEY = '';
 
         const { createApp, ref, computed, onMounted, watch } = Vue;
 
@@ -273,6 +293,7 @@
                 const verificandoSessao = ref(sbConfigurado);
                 const modoLocal = ref(false);
                 const statusSync = ref('');
+                const ultimoErro = ref('');
                 const loginEmail = ref('');
                 const loginSenha = ref('');
                 const loginErro = ref('');
@@ -286,11 +307,22 @@
                         pendente:      { texto: 'salvando…',                    cor: 'text-amber-600',   icone: 'fas fa-cloud-arrow-up' },
                         sincronizando: { texto: 'sincronizando…',               cor: 'text-amber-600',   icone: 'fas fa-rotate fa-spin' },
                         salvo:         { texto: 'sincronizado',                 cor: 'text-emerald-600', icone: 'fas fa-check' },
-                        erro:          { texto: 'sem conexão, salvo só aqui',   cor: 'text-red-600',     icone: 'fas fa-triangle-exclamation' }
+                        erro:          { texto: 'não sincronizou, salvo só neste navegador', cor: 'text-red-600', icone: 'fas fa-triangle-exclamation' }
                     };
                     return mapa[statusSync.value] || { texto: 'conectado', cor: 'text-neutral-500', icone: 'fas fa-cloud' };
                 });
-                let pristine = null; // snapshot de um mês aberto mas ainda não editado
+
+                // Aviso visível sempre que os dados NÃO estão indo para o banco
+                const avisoConfig = computed(() => {
+                    if (!SUPABASE_URL || !SUPABASE_ANON_KEY)
+                        return 'Banco desligado: SUPABASE_URL e SUPABASE_ANON_KEY estão vazios neste arquivo. Seus dados estão sendo salvos SÓ neste navegador.';
+                    if (!window.supabase)
+                        return 'Não consegui carregar a biblioteca do banco (sem internet ou bloqueio). Seus dados estão sendo salvos SÓ neste navegador.';
+                    if (modoLocal.value && !usuario.value)
+                        return 'Modo local: nada está sendo sincronizado com o banco. Seus dados estão sendo salvos SÓ neste navegador.';
+                    return '';
+                });
+                let baseline = null; // fotografia do mês logo após carregar; só grava se mudar depois disso
 
                 const selectedMonthName = computed(() => {
                     const { year, month } = parseKey(selectedKey.value);
@@ -507,40 +539,22 @@
                     }
                 };
 
-                // Mês novo: herda parâmetros e gastos fixos do último mês salvo antes dele.
-                // O investimento inicial vira o saldo de investimento que sobrou naquele mês.
-                const criarPadrao = (key) => {
-                    const anteriores = Object.keys(store.value).filter(k => k < key).sort();
-                    const prev = store.value[anteriores[anteriores.length - 1]];
-
-                    if (prev) {
-                        const saidas = (prev.investimentosGastos || []).reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
-                        return {
-                            totalGastosSemanal: prev.totalGastosSemanal,
-                            totalCaixinha: prev.totalCaixinha,
-                            investimentoInicial: Number(prev.investimentoInicial || 0) - saidas,
-                            fixedExpenses: (prev.fixedExpenses || []).map(f => ({ ...f, id: Date.now() + Math.random(), status: 'pendente' })),
-                            investimentosGastos: [],
-                            weeklyExpenses: []
-                        };
-                    }
-
-                    return {
-                        totalGastosSemanal: 800,
-                        totalCaixinha: 800,
-                        investimentoInicial: 1877,
-                        fixedExpenses: [{ id: Date.now(), nome: 'Assinaturas (Spotify/Netflix)', valor: 67, status: 'pendente' }],
-                        investimentosGastos: [],
-                        weeklyExpenses: []
-                    };
-                };
+                // Mês novo: sempre começa com os valores padrão (não herda nada do mês anterior)
+                const criarPadrao = () => ({
+                    totalGastosSemanal: 800,
+                    totalCaixinha: 800,
+                    investimentoInicial: 1877,
+                    fixedExpenses: [{ id: Date.now(), nome: 'Assinaturas (Spotify/Netflix)', valor: 67, status: 'pendente' }],
+                    investimentosGastos: [],
+                    weeklyExpenses: []
+                });
 
                 const carregarMes = (key) => {
                     const { year, month } = parseKey(key);
                     generateWeeks(year, month);
 
                     const salvo = store.value[key];
-                    const d = salvo || criarPadrao(key);
+                    const d = salvo || criarPadrao();
 
                     totalGastosSemanal.value = d.totalGastosSemanal ?? 800;
                     totalCaixinha.value = d.totalCaixinha ?? 800;
@@ -550,27 +564,18 @@
                     investimentosGastos.value = (d.investimentosGastos || []).map(i => ({ ...i, status: i.status || 'pago' }));
                     weeklyExpenses.value = weeks.value.map((_, i) => Number(d.weeklyExpenses?.[i] || 0));
 
-                    // Mês só visualizado (nunca editado) não é gravado, para não "congelar" valores herdados
-                    pristine = salvo ? null : JSON.stringify(dadosAtuais());
+                    // Fotografia logo após carregar: só grava se você realmente mudar algo depois disso.
+                    // Assim, apenas abrir o app ou trocar de mês nunca altera nem reenvia nada ao banco.
+                    baseline = JSON.stringify(dadosAtuais());
                 };
 
-                // JSON com chaves ordenadas, para comparar conteúdo sem depender da ordem (o banco reordena)
-                const estavel = (o) => JSON.stringify(o, (k, v) =>
-                    (v && typeof v === 'object' && !Array.isArray(v))
-                        ? Object.keys(v).sort().reduce((a, x) => { a[x] = v[x]; return a; }, {})
-                        : v
-                );
                 const ts = (x) => (x ? new Date(x).getTime() : 0);
 
                 const salvarDados = () => {
                     const key = selectedKey.value;
                     const snap = JSON.stringify(dadosAtuais());
-                    const existente = store.value[key];
-                    if (!existente && snap === pristine) return;
-                    if (existente) {
-                        const { _atualizadoEm, ...conteudo } = existente;
-                        if (estavel(conteudo) === estavel(JSON.parse(snap))) return; // nada mudou de fato
-                    }
+                    if (snap === baseline) return; // nada mudou desde que o mês foi carregado/salvo
+                    baseline = snap;
                     store.value[key] = { ...JSON.parse(snap), _atualizadoEm: new Date().toISOString() };
                     persistir();
                     agendarEnvio(key);
@@ -581,6 +586,9 @@
                 const filaEnvio = new Set();
                 let timerEnvio = null;
                 let sincInicialOk = false;
+                let emSync = false;
+
+                const msgErro = (e) => (e && (e.message || e.error_description)) || String(e);
 
                 const enviarMes = async (key) => {
                     const d = store.value[key];
@@ -590,20 +598,24 @@
                         { user_id: usuario.value.id, mes: key, dados: JSON.parse(JSON.stringify(d)), updated_at: d._atualizadoEm },
                         { onConflict: 'user_id,mes' }
                     );
-                    return !error;
+                    if (error) { ultimoErro.value = msgErro(error); return false; }
+                    return true;
                 };
 
                 const descarregarFila = async () => {
                     if (!sb || !usuario.value || filaEnvio.size === 0) return;
+                    // Nunca envia nada antes de ter conferido o que já existe no banco
+                    if (!sincInicialOk) { await sincronizarInicial(); return; }
                     statusSync.value = 'sincronizando';
                     const keys = [...filaEnvio];
                     filaEnvio.clear();
                     let tudoCerto = true;
                     for (const k of keys) {
                         let ok = false;
-                        try { ok = await enviarMes(k); } catch (e) { ok = false; }
+                        try { ok = await enviarMes(k); } catch (e) { ultimoErro.value = msgErro(e); ok = false; }
                         if (!ok) { filaEnvio.add(k); tudoCerto = false; }
                     }
+                    if (tudoCerto) ultimoErro.value = '';
                     statusSync.value = tudoCerto ? 'salvo' : 'erro';
                 };
 
@@ -617,7 +629,8 @@
 
                 // Ao entrar: traz do banco o que for mais novo e envia o que só existe (ou é mais novo) aqui
                 const sincronizarInicial = async () => {
-                    if (!sb || !usuario.value) return;
+                    if (!sb || !usuario.value || emSync) return;
+                    emSync = true;
                     statusSync.value = 'sincronizando';
                     try {
                         const { data, error } = await sb.from('meses').select('mes, dados, updated_at');
@@ -643,11 +656,15 @@
                         if (mudouLocal) { persistir(); carregarMes(selectedKey.value); }
 
                         sincInicialOk = true;
+                        ultimoErro.value = '';
                         statusSync.value = 'salvo';
                         await descarregarFila();
                     } catch (e) {
                         console.warn('Falha ao sincronizar', e);
+                        ultimoErro.value = msgErro(e);
                         statusSync.value = 'erro';
+                    } finally {
+                        emSync = false;
                     }
                 };
 
@@ -672,9 +689,23 @@
                     await sincronizarInicial();
                 };
 
+                // Confere no banco se tudo o que está neste navegador já foi salvo lá
+                const confirmarNoBanco = async () => {
+                    try {
+                        const { data, error } = await sb.from('meses').select('mes, dados, updated_at');
+                        if (error) throw error;
+                        const remotos = {};
+                        data.forEach(r => { remotos[r.mes] = ts(r.dados?._atualizadoEm || r.updated_at); });
+                        return Object.keys(store.value).every(k => (k in remotos) && remotos[k] >= ts(store.value[k]._atualizadoEm));
+                    } catch (e) {
+                        return false;
+                    }
+                };
+
                 const sair = async () => {
                     await descarregarFila();
-                    if (filaEnvio.size > 0 && !confirm('Há alterações que ainda não foram sincronizadas e serão perdidas neste navegador. Sair mesmo assim?')) return;
+                    const tudoSalvo = filaEnvio.size === 0 && await confirmarNoBanco();
+                    if (!tudoSalvo && !confirm('Não consegui confirmar que tudo já está salvo no banco. Se sair, a cópia deste navegador é apagada e você pode perder dados. Sair mesmo assim?')) return;
                     try { await sb.auth.signOut(); } catch (e) {}
                     // limpa a cópia local para não deixar seus dados no navegador depois de sair
                     try { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(LEGACY_KEY); } catch (e) {}
@@ -758,7 +789,7 @@
                 return {
                     totalGastosSemanal, totalCaixinha, investimentoInicial,
                     selectedKey, selectedMonthName, monthTabs, selecionarMes,
-                    sbConfigurado, usuario, precisaLogin, modoLocal, syncInfo,
+                    sbConfigurado, usuario, precisaLogin, modoLocal, syncInfo, statusSync, ultimoErro, avisoConfig,
                     loginEmail, loginSenha, loginErro, carregandoLogin, entrar, sair,
                     fixedExpenses, newFixedName, newFixedValue, newFixedStatus, addFixed, removeFixed, totalFixed, opcoesGastosFixos,
                     fixedGroups, invGroups, alternarStatus, novoInvStatus,
