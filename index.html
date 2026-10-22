@@ -150,6 +150,24 @@
 
                         <input type="number" v-model.number="newFixedValue" placeholder="R$" class="w-24 p-2 text-sm border rounded outline-none" @keyup.enter="addFixed">
                         <button @click="addFixed" class="bg-neutral-800 text-white px-3 rounded hover:bg-neutral-700" title="Adicionar Gasto"><i class="fas fa-plus"></i></button>
+                        <button @click="mostrarOpcoes = !mostrarOpcoes" :class="mostrarOpcoes ? 'bg-neutral-200' : 'bg-white'" class="border px-3 rounded text-neutral-600 hover:bg-neutral-100" title="Editar lista de opções"><i class="fas fa-gear"></i></button>
+                    </div>
+
+                    <!-- Gerenciar opções do dropdown -->
+                    <div v-if="mostrarOpcoes" class="mt-3 p-3 rounded-xl border border-neutral-200 bg-neutral-50">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">Opções de gasto fixo</p>
+                        <p v-if="opcoesGastosFixos.length === 0" class="text-xs text-neutral-400 italic text-center py-1">Nenhuma opção.</p>
+                        <ul class="space-y-1 mb-3">
+                            <li v-for="opcao in opcoesGastosFixos" :key="opcao" class="flex justify-between items-center text-sm bg-white p-2 rounded border border-neutral-100">
+                                <span>{{ opcao }}</span>
+                                <button @click="removeOpcao(opcao)" class="text-red-400 hover:text-red-600" title="Excluir opção"><i class="fas fa-trash"></i></button>
+                            </li>
+                        </ul>
+                        <div class="flex gap-2">
+                            <input type="text" v-model="novaOpcao" placeholder="Nova opção" class="w-full p-2 text-sm border rounded outline-none" @keyup.enter="addOpcao">
+                            <button @click="addOpcao" class="bg-neutral-800 text-white px-3 rounded hover:bg-neutral-700" title="Adicionar opção"><i class="fas fa-plus"></i></button>
+                        </div>
+                        <p class="text-[11px] text-neutral-400 mt-2">Excluir uma opção não apaga gastos já lançados com esse nome.</p>
                     </div>
                 </div>
 
@@ -361,14 +379,68 @@
                 const investimentoInicial = ref(1877);
 
                 // --- GASTOS FIXOS ---
-                const opcoesGastosFixos = ref([
+                const OPCOES_KEY = 'controleGastosOpcoes';
+                const opcoesPadrao = [
                     'Combustível',
                     'Corte de Cabelo',
                     'Lavar Carro',
                     'Whey',
                     'Personal',
                     'Assinaturas (Spotify/Netflix)'
-                ]);
+                ];
+
+                // a lista de opções é uma só para todos os meses
+                // vai para o banco numa linha especial da tabela meses (mes = 'config')
+                const CONFIG_KEY = 'config';
+
+                const carregarOpcoes = () => {
+                    try {
+                        const bruto = JSON.parse(localStorage.getItem(OPCOES_KEY));
+                        // formato antigo guardava só a lista
+                        if (Array.isArray(bruto)) {
+                            const igual = JSON.stringify(bruto) === JSON.stringify(opcoesPadrao);
+                            return { lista: bruto, em: igual ? null : new Date().toISOString() };
+                        }
+                        if (bruto && Array.isArray(bruto.lista)) return bruto;
+                    } catch (e) {}
+                    return { lista: [...opcoesPadrao], em: null };
+                };
+
+                const opcoesSalvas = carregarOpcoes();
+                const opcoesGastosFixos = ref(opcoesSalvas.lista);
+                let opcoesEm = opcoesSalvas.em; // quando a lista foi editada pela última vez (null = nunca)
+                const mostrarOpcoes = ref(false);
+                const novaOpcao = ref('');
+
+                const persistirOpcoes = () => {
+                    try {
+                        localStorage.setItem(OPCOES_KEY, JSON.stringify({ lista: opcoesGastosFixos.value, em: opcoesEm }));
+                    } catch (e) {}
+                };
+
+                const salvarOpcoes = () => {
+                    opcoesEm = new Date().toISOString();
+                    persistirOpcoes();
+                    agendarEnvio(CONFIG_KEY);
+                };
+
+                const addOpcao = () => {
+                    const nome = novaOpcao.value.trim();
+                    if (!nome) return;
+                    // evita duplicada ignorando maiúsculas
+                    const existe = opcoesGastosFixos.value.some(o => o.toLowerCase() === nome.toLowerCase());
+                    if (!existe) {
+                        opcoesGastosFixos.value.push(nome);
+                        salvarOpcoes();
+                    }
+                    novaOpcao.value = '';
+                };
+
+                const removeOpcao = (nome) => {
+                    opcoesGastosFixos.value = opcoesGastosFixos.value.filter(o => o !== nome);
+                    if (newFixedName.value === nome) newFixedName.value = '';
+                    salvarOpcoes();
+                };
 
                 const fixedExpenses = ref([
                     { id: Date.now(), nome: 'Assinaturas (Spotify/Netflix)', valor: 67, status: 'pago' }
@@ -610,7 +682,10 @@
                 const msgErro = (e) => (e && (e.message || e.error_description)) || String(e);
 
                 const enviarMes = async (key) => {
-                    const d = store.value[key];
+                    const ehConfig = key === CONFIG_KEY;
+                    const d = ehConfig
+                        ? { opcoes: opcoesGastosFixos.value, _atualizadoEm: opcoesEm }
+                        : store.value[key];
                     if (!d) return true;
                     if (!d._atualizadoEm) { d._atualizadoEm = new Date().toISOString(); persistir(); }
                     const { error } = await sb.from('meses').upsert(
@@ -657,7 +732,9 @@
 
                         const remotos = {};
                         let mudouLocal = false;
+                        let configRemota = null;
                         for (const r of data) {
+                            if (r.mes === CONFIG_KEY) { configRemota = r; continue; }
                             remotos[r.mes] = r;
                             const local = store.value[r.mes];
                             const tRemoto = ts(r.dados?._atualizadoEm || r.updated_at);
@@ -673,6 +750,16 @@
                             }
                         }
                         if (mudouLocal) { persistir(); carregarMes(selectedKey.value); }
+
+                        // lista de opções: vale a versão mais nova
+                        const tCfgRemoto = configRemota ? ts(configRemota.dados?._atualizadoEm || configRemota.updated_at) : 0;
+                        if (configRemota && tCfgRemoto > ts(opcoesEm) && Array.isArray(configRemota.dados?.opcoes)) {
+                            opcoesGastosFixos.value = configRemota.dados.opcoes;
+                            opcoesEm = configRemota.dados._atualizadoEm || configRemota.updated_at;
+                            persistirOpcoes();
+                        } else if (opcoesEm && ts(opcoesEm) > tCfgRemoto) {
+                            filaEnvio.add(CONFIG_KEY);
+                        }
 
                         sincInicialOk = true;
                         ultimoErro.value = '';
@@ -715,7 +802,9 @@
                         if (error) throw error;
                         const remotos = {};
                         data.forEach(r => { remotos[r.mes] = ts(r.dados?._atualizadoEm || r.updated_at); });
-                        return Object.keys(store.value).every(k => (k in remotos) && remotos[k] >= ts(store.value[k]._atualizadoEm));
+                        const mesesOk = Object.keys(store.value).every(k => (k in remotos) && remotos[k] >= ts(store.value[k]._atualizadoEm));
+                        const opcoesOk = !opcoesEm || ((CONFIG_KEY in remotos) && remotos[CONFIG_KEY] >= ts(opcoesEm));
+                        return mesesOk && opcoesOk;
                     } catch (e) {
                         return false;
                     }
@@ -727,7 +816,7 @@
                     if (!tudoSalvo && !confirm('Não consegui confirmar que tudo já está salvo no banco. Se sair, a cópia deste navegador é apagada e você pode perder dados. Sair mesmo assim?')) return;
                     try { await sb.auth.signOut(); } catch (e) {}
                     // limpa a cópia local para não deixar seus dados no navegador depois de sair
-                    try { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(LEGACY_KEY); } catch (e) {}
+                    try { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(LEGACY_KEY); localStorage.removeItem(OPCOES_KEY); } catch (e) {}
                     location.reload();
                 };
 
@@ -811,6 +900,7 @@
                     sbConfigurado, usuario, precisaLogin, modoLocal, syncInfo, statusSync, ultimoErro, avisoConfig,
                     loginEmail, loginSenha, loginErro, carregandoLogin, entrar, sair,
                     fixedExpenses, newFixedName, newFixedValue, newFixedStatus, addFixed, removeFixed, totalFixed, opcoesGastosFixos,
+                    mostrarOpcoes, novaOpcao, addOpcao, removeOpcao,
                     fixedGroups, invGroups, alternarStatus, novoInvStatus,
                     weekCalculations, weeklyExpenses, saldoPorSemana, qtdSemanasFuturas, totalSemanasFuturas,
                     investimentosGastos, novoInvNome, novoInvValor, addInv, removeInv, saldoInvestimento,
