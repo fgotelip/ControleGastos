@@ -13,24 +13,32 @@
     <!-- Supabase (banco de dados gratuito) -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
-<body class="bg-neutral-100 text-neutral-800 font-sans antialiased p-4 md:p-8">
+<body class="bg-slate-100 text-slate-800 font-sans antialiased p-4 md:p-8">
     <div id="app" class="max-w-6xl mx-auto space-y-6">
 
         <!-- Cabeçalho -->
-        <header class="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-neutral-200 gap-4">
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
             <div>
-                <h1 class="text-2xl font-bold text-neutral-900">Controle de Gastos</h1>
-                <p class="text-neutral-500">Mês de referência: <span class="font-semibold text-emerald-600">{{ selectedMonthName }}</span></p>
+                <h1 class="text-2xl font-bold text-slate-900">Controle de Gastos</h1>
+                <p class="text-slate-500">Mês de referência: <span class="font-semibold text-emerald-700">{{ selectedMonthName }}</span></p>
                 <p v-if="sbConfigurado && usuario" class="text-xs mt-1 flex items-center gap-3">
                     <span :class="syncInfo.cor"><i :class="syncInfo.icone" class="mr-1"></i>{{ syncInfo.texto }}</span>
-                    <button @click="sair" class="text-neutral-400 hover:text-neutral-600 underline">sair</button>
+                    <button @click="sair" class="text-slate-400 hover:text-slate-600 underline">sair</button>
                 </p>
-                <p v-if="statusSync === 'erro' && ultimoErro" class="text-xs text-red-600 mt-1 max-w-md">Erro do banco: {{ ultimoErro }}</p>
+                <p v-if="statusSync === 'erro' && ultimoErro" class="text-xs text-rose-600 mt-1 max-w-md">Erro do banco: {{ ultimoErro }}</p>
             </div>
 
-            <div class="text-right">
-                <p class="text-sm text-neutral-500">Total Investimentos</p>
-                <p class="text-xl font-bold text-blue-600">{{ formatCurrency(saldoInvestimento) }}</p>            </div>
+            <div class="flex flex-wrap items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+                <div class="bg-slate-800 text-white px-4 py-2.5 rounded-xl">
+                    <p class="text-[11px] uppercase tracking-wide text-slate-300">Total do Mês</p>
+                    <p class="text-xl font-bold">{{ formatCurrency(totalDisponivelMes) }}</p>
+                    <p class="text-[10px] text-emerald-300">Semanal + Caixinha + Investimentos</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-sm text-slate-500">Saldo Investimentos</p>
+                    <p class="text-xl font-bold" :class="saldoInvestimento >= 0 ? 'text-emerald-700' : 'text-rose-600'">{{ formatCurrency(saldoInvestimento) }}</p>
+                </div>
+            </div>
         </header>
 
         <!-- Aviso: dados não estão indo para o banco -->
@@ -42,187 +50,111 @@
         <nav class="flex gap-2 overflow-x-auto pb-1">
             <button v-for="tab in monthTabs" :key="tab.key" @click="selecionarMes(tab.key)"
                 :class="tab.key === selectedKey
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow'
-                    : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-50'"
+                    ? 'bg-slate-800 text-white border-slate-800 shadow'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'"
                 class="shrink-0 px-4 py-2 rounded-lg border text-sm font-semibold transition-colors flex flex-col items-center leading-tight">
                 <span>{{ tab.label }}</span>
                 <span class="text-[10px] font-normal opacity-80">{{ tab.tag || '&nbsp;' }}</span>
             </button>
         </nav>
 
-        <!-- Telas grandes (6 colunas): linha 1 = Parâmetros + Planejamento Semanal; linha 2 = Gastos Fixos + Saídas de Investimento lado a lado -->
+        <!-- Meta 30 / 40 / 30 -->
+        <section class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-3">
+                <h2 class="text-base font-bold text-slate-900">
+                    <i class="fas fa-chart-pie mr-2 text-slate-600"></i>Meta 30 / 40 / 30
+                </h2>
+                <p class="text-xs text-slate-500">
+                    Base: <span class="font-semibold text-slate-800">{{ formatCurrency(totalDisponivelMes) }}</span> disponíveis no mês
+                </p>
+            </div>
+
+            <!-- Barra empilhada da distribuição atual -->
+            <div class="h-3 w-full rounded-full bg-slate-100 overflow-hidden flex border border-slate-200">
+                <div v-for="item in regra304030" :key="item.key"
+                    :class="item.corBarra"
+                    :style="{ width: item.larguraBarra + '%' }"
+                    :title="`${item.nome}: ${formatPercent(item.pctAtual)}`"
+                    class="h-full transition-all duration-300"></div>
+            </div>
+
+            <!-- Legenda -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+                <div v-for="item in regra304030" :key="item.key" class="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                    <div class="flex items-center justify-between gap-2 mb-1">
+                        <div class="flex items-center gap-2">
+                            <span :class="item.corBarra" class="w-3 h-3 rounded-sm shrink-0"></span>
+                            <span class="text-xs font-semibold text-slate-800">{{ item.nome }} · meta {{ item.metaPct }}%</span>
+                        </div>
+                        <span class="text-[11px] font-semibold" :class="item.estourado ? 'text-rose-600' : 'text-emerald-700'">
+                            {{ item.statusTexto }}
+                        </span>
+                    </div>
+                    <p class="text-[11px] text-slate-500 mb-1.5">{{ item.detalhe }}</p>
+                    <div class="flex justify-between items-baseline text-xs">
+                        <span class="text-slate-500">Meta: <strong class="text-slate-700">{{ formatCurrency(item.meta) }}</strong></span>
+                        <span class="text-slate-700">Atual: <strong class="text-slate-900">{{ formatCurrency(item.atual) }}</strong> ({{ formatPercent(item.pctAtual) }})</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Telas grandes (6 colunas): linha 1 = Parâmetros + Planejamento Semanal; linha 2 = Gastos Fixos + Gastos Pessoais + Saídas de Investimento -->
         <div class="grid grid-cols-1 lg:grid-cols-6 gap-6">
 
-            <!-- Coluna Esquerda: Configurações e Gastos Fixos -->
-            <div class="contents">
-
-                <!-- Parâmetros da Caixinha -->
-                <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200 lg:col-span-2 lg:order-1">
-                    <h2 class="text-lg font-bold mb-4 border-b pb-2"><i class="fas fa-wallet mr-2 text-emerald-500"></i>Parâmetros Iniciais</h2>
-                    <div class="space-y-4">
-                         <div>
-                            <label class="block text-sm text-neutral-600 mb-1">Total Gasto Semanal</label>
-                            <div class="relative">
-                                <span class="absolute left-3 top-2 text-neutral-500 font-medium">R$</span>
-                                <input type="number" v-model.number="totalGastosSemanal"
-                                    class="w-full p-2 pl-9 border rounded focus:ring-2 focus:ring-emerald-500 outline-none">
-                            </div>
+            <!-- Parâmetros da Caixinha -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 lg:col-span-2">
+                <h2 class="text-lg font-bold mb-4 border-b pb-2"><i class="fas fa-wallet mr-2 text-slate-600"></i>Parâmetros Iniciais</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm text-slate-600 mb-1">Total Gasto Semanal</label>
+                        <div class="relative">
+                            <span class="absolute left-3 top-2 text-slate-500 font-medium">R$</span>
+                            <input type="number" v-model.number="totalGastosSemanal"
+                                class="w-full p-2 pl-9 border border-slate-200 rounded focus:ring-2 focus:ring-slate-400 outline-none">
                         </div>
-                        <div>
-                            <label class="block text-sm text-neutral-600 mb-1">Total Caixinha Base</label>
-                            <div class="relative">
-                                <span class="absolute left-3 top-2 text-neutral-500 font-medium">R$</span>
-                                <input type="number" v-model.number="totalCaixinha"
-                                    class="w-full p-2 pl-9 border rounded focus:ring-2 focus:ring-emerald-500 outline-none">
-                            </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-slate-600 mb-1">Total Caixinha Base</label>
+                        <div class="relative">
+                            <span class="absolute left-3 top-2 text-slate-500 font-medium">R$</span>
+                            <input type="number" v-model.number="totalCaixinha"
+                                class="w-full p-2 pl-9 border border-slate-200 rounded focus:ring-2 focus:ring-slate-400 outline-none">
                         </div>
-                        <div>
-                            <label class="block text-sm text-neutral-600 mb-1">Saldo Por Semana</label>
-                            <div class="w-full p-2 border rounded bg-neutral-100 text-neutral-600 font-medium select-none">
-                                {{ formatCurrency(saldoPorSemana) }}
-                            </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-slate-600 mb-1">Saldo Por Semana</label>
+                        <div class="w-full p-2 border border-slate-200 rounded bg-slate-100 text-slate-700 font-medium select-none">
+                            {{ formatCurrency(saldoPorSemana) }}
                         </div>
-                        <div>
-                            <label class="block text-sm text-neutral-600 mb-1">Semanas Futuras</label>
-                            <div class="w-full p-2 border rounded bg-neutral-100 text-neutral-600 font-medium select-none">
-                                {{ formatCurrency(totalSemanasFuturas) }}
-                            </div>
-                            <p class="text-xs text-neutral-400 mt-1">{{ qtdSemanasFuturas }} {{ qtdSemanasFuturas === 1 ? 'semana' : 'semanas' }} × {{ formatCurrency(saldoPorSemana) }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-slate-600 mb-1">Semanas Futuras</label>
+                        <div class="w-full p-2 border border-slate-200 rounded bg-slate-100 text-slate-700 font-medium select-none">
+                            {{ formatCurrency(totalSemanasFuturas) }}
                         </div>
-                        <div>
-                            <label class="block text-sm text-neutral-600 mb-1">Investimento Inicial</label>
-                            <div class="relative">
-                                <span class="absolute left-3 top-2 text-neutral-500 font-medium">R$</span>
-                                <input type="number" v-model.number="investimentoInicial"
-                                    class="w-full p-2 pl-9 border rounded focus:ring-2 focus:ring-blue-500 outline-none">
-                            </div>
+                        <p class="text-xs text-slate-400 mt-1">{{ qtdSemanasFuturas }} {{ qtdSemanasFuturas === 1 ? 'semana' : 'semanas' }} × {{ formatCurrency(saldoPorSemana) }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-slate-600 mb-1">Investimento Inicial</label>
+                        <div class="relative">
+                            <span class="absolute left-3 top-2 text-slate-500 font-medium">R$</span>
+                            <input type="number" v-model.number="investimentoInicial"
+                                class="w-full p-2 pl-9 border border-slate-200 rounded focus:ring-2 focus:ring-slate-400 outline-none">
                         </div>
                     </div>
                 </div>
-
-                <!-- Gastos Fixos da Caixinha -->
-                <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200 lg:col-span-3 lg:order-3">
-                    <div class="flex justify-between items-center border-b pb-2 mb-4">
-                        <h2 class="text-lg font-bold"><i class="fas fa-thumbtack mr-2 text-red-500"></i>Gastos Fixos</h2>
-                        <span class="text-sm font-bold text-red-600">{{ formatCurrency(totalFixed) }}</span>
-                    </div>
-
-                    <p v-if="fixedExpenses.length === 0" class="text-sm text-neutral-400 italic text-center py-2 mb-2">Nenhum gasto fixo adicionado.</p>
-                    <div class="space-y-3 mb-4">
-                        <div v-for="grupo in fixedGroups" :key="grupo.key" :class="grupo.box" class="rounded-xl border p-3">
-                            <div class="flex justify-between items-baseline mb-2">
-                                <span class="text-xs font-semibold uppercase tracking-wide" :class="grupo.titulo"><i :class="grupo.icone" class="mr-1"></i>{{ grupo.nome }}</span>
-                                <span class="text-base font-bold" :class="grupo.valor">{{ formatCurrency(grupo.total) }}</span>
-                            </div>
-                            <ul class="space-y-2">
-                                <li v-if="grupo.itens.length === 0" class="text-xs text-neutral-400 italic text-center py-1">Vazio</li>
-                                <li v-for="gasto in grupo.itens" :key="gasto.id" class="text-sm bg-white/70 p-2 rounded">
-                                    <div class="flex justify-between items-center gap-2">
-                                        <span>{{ gasto.nome }}</span>
-                                        <div class="flex items-center gap-3">
-                                            <span class="font-semibold">{{ formatCurrency(gasto.valor) }}</span>
-                                            <button @click="removeFixed(gasto.id)" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
-                                        </div>
-                                    </div>
-                                    <button @click="alternarStatus(gasto)"
-                                        :title="gasto.status === 'pendente' ? 'Clique para marcar como já gasto' : 'Clique para voltar para futuro'"
-                                        :class="gasto.status === 'pendente' ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200' : 'bg-red-100 text-red-800 border-red-300 hover:bg-red-200'"
-                                        class="mt-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-semibold whitespace-nowrap transition-colors">
-                                        <i class="fas fa-arrows-rotate mr-1"></i>{{ gasto.status === 'pendente' ? 'Futuro' : 'Já gasto' }}
-                                    </button>
-                                </li>
-                            </ul>
-                        </div>
-                    </div>
-
-                    <div class="flex gap-2 mb-2 text-xs">
-                        <button @click="newFixedStatus = 'pendente'" :class="newFixedStatus === 'pendente' ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-white text-neutral-500 border-neutral-200'" class="px-3 py-1 rounded-full border font-semibold">Futuro</button>
-                        <button @click="newFixedStatus = 'pago'" :class="newFixedStatus === 'pago' ? 'bg-red-100 text-red-800 border-red-300' : 'bg-white text-neutral-500 border-neutral-200'" class="px-3 py-1 rounded-full border font-semibold">Já gasto</button>
-                    </div>
-                    <div class="flex gap-2">
-                        <!-- Dropdown de Categorias -->
-                        <select v-model="newFixedName" class="w-full p-2 text-sm border rounded outline-none bg-white">
-                            <option disabled value="">Selecione...</option>
-                            <option v-for="opcao in opcoesGastosFixos" :key="opcao" :value="opcao">
-                                {{ opcao }}
-                            </option>
-                        </select>
-
-                        <input type="number" v-model.number="newFixedValue" placeholder="R$" class="w-24 p-2 text-sm border rounded outline-none" @keyup.enter="addFixed">
-                        <button @click="addFixed" class="bg-neutral-800 text-white px-3 rounded hover:bg-neutral-700" title="Adicionar Gasto"><i class="fas fa-plus"></i></button>
-                        <button @click="mostrarOpcoes = !mostrarOpcoes" :class="mostrarOpcoes ? 'bg-neutral-200' : 'bg-white'" class="border px-3 rounded text-neutral-600 hover:bg-neutral-100" title="Editar lista de opções"><i class="fas fa-gear"></i></button>
-                    </div>
-
-                    <!-- Gerenciar opções do dropdown -->
-                    <div v-if="mostrarOpcoes" class="mt-3 p-3 rounded-xl border border-neutral-200 bg-neutral-50">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">Opções de gasto fixo</p>
-                        <p v-if="opcoesGastosFixos.length === 0" class="text-xs text-neutral-400 italic text-center py-1">Nenhuma opção.</p>
-                        <ul class="space-y-1 mb-3">
-                            <li v-for="opcao in opcoesGastosFixos" :key="opcao" class="flex justify-between items-center text-sm bg-white p-2 rounded border border-neutral-100">
-                                <span>{{ opcao }}</span>
-                                <button @click="removeOpcao(opcao)" class="text-red-400 hover:text-red-600" title="Excluir opção"><i class="fas fa-trash"></i></button>
-                            </li>
-                        </ul>
-                        <div class="flex gap-2">
-                            <input type="text" v-model="novaOpcao" placeholder="Nova opção" class="w-full p-2 text-sm border rounded outline-none" @keyup.enter="addOpcao">
-                            <button @click="addOpcao" class="bg-neutral-800 text-white px-3 rounded hover:bg-neutral-700" title="Adicionar opção"><i class="fas fa-plus"></i></button>
-                        </div>
-                        <p class="text-[11px] text-neutral-400 mt-2">Excluir uma opção não apaga gastos já lançados com esse nome.</p>
-                    </div>
-                </div>
-
-                <!-- Gastos Investimentos -->
-                <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200 lg:col-span-3 lg:order-4">
-                    <h2 class="text-lg font-bold mb-4 border-b pb-2"><i class="fas fa-chart-line mr-2 text-blue-500"></i>Saídas de Investimento</h2>
-                    <p v-if="investimentosGastos.length === 0" class="text-sm text-neutral-400 italic text-center py-2 mb-2">Nenhuma saída registrada.</p>
-                    <div class="space-y-3 mb-4">
-                        <div v-for="grupo in invGroups" :key="grupo.key" :class="grupo.box" class="rounded-xl border p-3">
-                            <div class="flex justify-between items-baseline mb-2">
-                                <span class="text-xs font-semibold uppercase tracking-wide" :class="grupo.titulo"><i :class="grupo.icone" class="mr-1"></i>{{ grupo.nome }}</span>
-                                <span class="text-base font-bold" :class="grupo.valor">{{ formatCurrency(grupo.total) }}</span>
-                            </div>
-                            <ul class="space-y-2">
-                                <li v-if="grupo.itens.length === 0" class="text-xs text-neutral-400 italic text-center py-1">Vazio</li>
-                                <li v-for="inv in grupo.itens" :key="inv.id" class="text-sm bg-white/70 p-2 rounded">
-                                    <div class="flex justify-between items-center gap-2">
-                                        <span>{{ inv.nome }}</span>
-                                        <div class="flex items-center gap-3">
-                                            <span class="font-semibold">{{ formatCurrency(inv.valor) }}</span>
-                                            <button @click="removeInv(inv.id)" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
-                                        </div>
-                                    </div>
-                                    <button @click="alternarStatus(inv)"
-                                        :title="inv.status === 'pendente' ? 'Clique para marcar como já saiu' : 'Clique para voltar para pendente'"
-                                        :class="inv.status === 'pendente' ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200' : 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200'"
-                                        class="mt-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-semibold whitespace-nowrap transition-colors">
-                                        <i class="fas fa-arrows-rotate mr-1"></i>{{ inv.status === 'pendente' ? 'Pendente' : 'Já saiu' }}
-                                    </button>
-                                </li>
-                            </ul>
-                        </div>
-                    </div>
-                    <div class="flex gap-2 mb-2 text-xs">
-                        <button @click="novoInvStatus = 'pendente'" :class="novoInvStatus === 'pendente' ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-white text-neutral-500 border-neutral-200'" class="px-3 py-1 rounded-full border font-semibold">Pendente</button>
-                        <button @click="novoInvStatus = 'pago'" :class="novoInvStatus === 'pago' ? 'bg-blue-100 text-blue-800 border-blue-300' : 'bg-white text-neutral-500 border-neutral-200'" class="px-3 py-1 rounded-full border font-semibold">Já saiu</button>
-                    </div>
-                    <div class="flex gap-2">
-                        <input type="text" v-model="novoInvNome" placeholder="Descrição" class="w-full p-2 text-sm border rounded outline-none" @keyup.enter="addInv">
-                        <input type="number" v-model.number="novoInvValor" placeholder="R$" class="w-24 p-2 text-sm border rounded outline-none" @keyup.enter="addInv">
-                        <button @click="addInv" class="bg-neutral-800 text-white px-3 rounded hover:bg-neutral-700"><i class="fas fa-plus"></i></button>
-                    </div>
-                </div>
-
             </div>
 
             <!-- Coluna Direita: Fluxo Semanal -->
-            <div class="lg:col-span-4 lg:order-2">
-                <div class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200 h-full">
-                    <h2 class="text-lg font-bold mb-4 border-b pb-2"><i class="fas fa-calendar-alt mr-2 text-neutral-700"></i>Planejamento Semanal</h2>
+            <div class="lg:col-span-4">
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-full">
+                    <h2 class="text-lg font-bold mb-4 border-b pb-2"><i class="fas fa-calendar-alt mr-2 text-slate-600"></i>Planejamento Semanal</h2>
 
                     <div class="overflow-x-auto">
                         <table class="w-full text-left border-collapse">
                             <thead>
-                                <tr class="text-sm text-neutral-500 bg-neutral-50">
+                                <tr class="text-sm text-slate-500 bg-slate-50">
                                     <th class="p-3 border-b rounded-tl-lg">Período</th>
                                     <th class="p-3 border-b">Caixinha Atual</th>
                                     <th class="p-3 border-b">Rateio Semana</th>
@@ -231,17 +163,17 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr v-for="(week, index) in weekCalculations" :key="index" class="border-b last:border-0 hover:bg-neutral-50 transition-colors">
+                                <tr v-for="(week, index) in weekCalculations" :key="index" class="border-b last:border-0 hover:bg-slate-50 transition-colors">
                                     <td class="p-3 text-sm">
-                                        <div class="font-semibold text-neutral-700">Semana {{ index + 1 }}</div>
-                                        <div class="text-xs text-neutral-500">{{ formatDate(week.start) }} - {{ formatDate(week.end) }}</div>
+                                        <div class="font-semibold text-slate-800">Semana {{ index + 1 }}</div>
+                                        <div class="text-xs text-slate-500">{{ formatDate(week.start) }} - {{ formatDate(week.end) }}</div>
                                     </td>
-                                    <td class="p-3 font-medium text-neutral-600">{{ formatCurrency(week.saldoCaixinhaAtual) }}</td>
-                                    <td class="p-3 font-semibold text-emerald-600">{{ formatCurrency(week.saldoExtraSemana) }}</td>
+                                    <td class="p-3 font-medium text-slate-600">{{ formatCurrency(week.saldoCaixinhaAtual) }}</td>
+                                    <td class="p-3 font-semibold text-slate-800">{{ formatCurrency(week.saldoExtraSemana) }}</td>
                                     <td class="p-3">
-                                        <input type="number" v-model.number="weeklyExpenses[index]" class="w-24 p-1.5 text-sm border rounded focus:ring-2 focus:ring-red-400 outline-none">
+                                        <input type="number" v-model.number="weeklyExpenses[index]" class="w-24 p-1.5 text-sm border border-slate-200 rounded focus:ring-2 focus:ring-indigo-300 outline-none">
                                     </td>
-                                    <td class="p-3 font-bold" :class="week.saldoExtraRestante >= 0 ? 'text-emerald-600' : 'text-red-600'">
+                                    <td class="p-3 font-bold" :class="week.saldoExtraRestante >= 0 ? 'text-emerald-700' : 'text-rose-600'">
                                         {{ formatCurrency(week.saldoExtraRestante) }}
                                     </td>
                                 </tr>
@@ -251,27 +183,282 @@
                 </div>
             </div>
 
+            <!-- Gastos Fixos da Caixinha -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 lg:col-span-2">
+                <div class="flex justify-between items-center border-b pb-2 mb-4">
+                    <h2 class="text-lg font-bold"><i class="fas fa-thumbtack mr-2 text-amber-600"></i>Gastos Fixos</h2>
+                    <span class="text-sm font-bold text-slate-900">{{ formatCurrency(totalFixed) }}</span>
+                </div>
+
+                <p v-if="fixedExpenses.length === 0" class="text-sm text-slate-400 italic text-center py-2 mb-2">Nenhum gasto fixo adicionado.</p>
+                <div class="space-y-3 mb-4">
+                    <!-- Futuros -->
+                    <div class="rounded-xl border bg-slate-50 border-slate-200 p-3">
+                        <div class="flex justify-between items-baseline mb-2">
+                            <span class="text-xs font-semibold uppercase tracking-wide text-slate-600"><i class="fas fa-hourglass-half mr-1 text-amber-600"></i>Futuros</span>
+                            <span class="text-base font-bold text-slate-900">{{ formatCurrency(totalFixedFuturos) }}</span>
+                        </div>
+                        <ul class="space-y-2">
+                            <li v-if="fixedFuturos.length === 0" class="text-xs text-slate-400 italic text-center py-1">Vazio</li>
+                            <li v-for="gasto in fixedFuturos" :key="gasto.id" class="text-sm bg-white p-2 rounded border border-slate-200/80">
+                                <div class="flex justify-between items-center gap-2">
+                                    <span class="text-slate-800">{{ gasto.nome }}</span>
+                                    <div class="flex items-center gap-3 shrink-0">
+                                        <span class="font-semibold text-slate-900">{{ formatCurrency(gasto.valor) }}</span>
+                                        <button @click="removeFixed(gasto.id)" class="text-slate-400 hover:text-rose-600"><i class="fas fa-trash"></i></button>
+                                    </div>
+                                </div>
+                                <button @click="alternarStatus(gasto)"
+                                    title="Clique para marcar como já gasto"
+                                    class="mt-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-semibold whitespace-nowrap transition-colors bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100">
+                                    <i class="fas fa-arrows-rotate mr-1"></i>Futuro
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <!-- Já gastos (agrupado por nome quando há mais de 1 lançamento) -->
+                    <div class="rounded-xl border bg-slate-50 border-slate-200 p-3">
+                        <div class="flex justify-between items-baseline mb-2">
+                            <span class="text-xs font-semibold uppercase tracking-wide text-slate-600"><i class="fas fa-circle-check mr-1 text-slate-500"></i>Já gastos</span>
+                            <span class="text-base font-bold text-slate-900">{{ formatCurrency(totalFixedPagos) }}</span>
+                        </div>
+                        <ul class="space-y-2">
+                            <li v-if="fixedPaidGrouped.length === 0" class="text-xs text-slate-400 italic text-center py-1">Vazio</li>
+                            <li v-for="entry in fixedPaidGrouped" :key="entry.key" class="text-sm bg-white p-2 rounded border border-slate-200/80">
+                                <template v-if="entry.itens.length === 1">
+                                    <div class="flex justify-between items-center gap-2">
+                                        <span class="text-slate-800">{{ entry.itens[0].nome }}</span>
+                                        <div class="flex items-center gap-3 shrink-0">
+                                            <span class="font-semibold text-slate-900">{{ formatCurrency(entry.itens[0].valor) }}</span>
+                                            <button @click="removeFixed(entry.itens[0].id)" class="text-slate-400 hover:text-rose-600"><i class="fas fa-trash"></i></button>
+                                        </div>
+                                    </div>
+                                    <button @click="alternarStatus(entry.itens[0])"
+                                        title="Clique para voltar para futuro"
+                                        class="mt-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-semibold whitespace-nowrap transition-colors bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200">
+                                        <i class="fas fa-arrows-rotate mr-1"></i>Já gasto
+                                    </button>
+                                </template>
+                                <template v-else>
+                                    <div class="flex justify-between items-center gap-2">
+                                        <div class="flex items-center gap-2 min-w-0">
+                                            <span class="text-slate-800 truncate">{{ entry.nome }}</span>
+                                            <span class="text-[11px] px-1.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600 font-semibold shrink-0">{{ entry.itens.length }}×</span>
+                                        </div>
+                                        <div class="flex items-center gap-2 shrink-0">
+                                            <span class="font-semibold text-slate-900">{{ formatCurrency(entry.total) }}</span>
+                                            <button @click="toggleFixedGroup(entry.key)"
+                                                class="text-slate-500 hover:text-slate-800 px-1"
+                                                :title="expandedFixedGroups[entry.key] ? 'Recolher itens' : 'Ver itens'">
+                                                <i :class="expandedFixedGroups[entry.key] ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" class="text-xs"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <ul v-if="expandedFixedGroups[entry.key]" class="mt-2 pt-2 border-t border-slate-100 space-y-1.5">
+                                        <li v-for="gasto in entry.itens" :key="gasto.id" class="flex justify-between items-center gap-2 text-xs text-slate-600 pl-2">
+                                            <button @click="alternarStatus(gasto)"
+                                                title="Clique para voltar para futuro"
+                                                class="px-2 py-0.5 rounded-full border text-[10px] font-semibold bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200">
+                                                <i class="fas fa-arrows-rotate mr-1"></i>Já gasto
+                                            </button>
+                                            <div class="flex items-center gap-3">
+                                                <span class="font-medium text-slate-800">{{ formatCurrency(gasto.valor) }}</span>
+                                                <button @click="removeFixed(gasto.id)" class="text-slate-400 hover:text-rose-600"><i class="fas fa-trash"></i></button>
+                                            </div>
+                                        </li>
+                                    </ul>
+                                </template>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 mb-2 text-xs">
+                    <button @click="newFixedStatus = 'pendente'" :class="newFixedStatus === 'pendente' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-white text-slate-500 border-slate-200'" class="px-3 py-1 rounded-full border font-semibold">Futuro</button>
+                    <button @click="newFixedStatus = 'pago'" :class="newFixedStatus === 'pago' ? 'bg-slate-100 text-slate-800 border-slate-300' : 'bg-white text-slate-500 border-slate-200'" class="px-3 py-1 rounded-full border font-semibold">Já gasto</button>
+                </div>
+                <div class="flex gap-2">
+                    <select v-model="newFixedName" class="min-w-0 flex-1 p-2 text-sm border border-slate-200 rounded outline-none bg-white focus:ring-2 focus:ring-slate-400">
+                        <option disabled value="">Selecione...</option>
+                        <option v-for="opcao in opcoesGastosFixos" :key="opcao" :value="opcao">
+                            {{ opcao }}
+                        </option>
+                    </select>
+
+                    <input type="number" v-model.number="newFixedValue" placeholder="R$" class="w-20 p-2 text-sm border border-slate-200 rounded outline-none focus:ring-2 focus:ring-slate-400" @keyup.enter="addFixed">
+                    <button @click="addFixed" class="bg-slate-800 text-white px-3 rounded hover:bg-slate-700" title="Adicionar Gasto"><i class="fas fa-plus"></i></button>
+                    <button @click="mostrarOpcoes = !mostrarOpcoes" :class="mostrarOpcoes ? 'bg-slate-200' : 'bg-white'" class="border border-slate-200 px-3 rounded text-slate-600 hover:bg-slate-100" title="Editar lista de opções"><i class="fas fa-gear"></i></button>
+                </div>
+
+                <!-- Gerenciar opções do dropdown -->
+                <div v-if="mostrarOpcoes" class="mt-3 p-3 rounded-xl border border-slate-200 bg-slate-50">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Opções de gasto fixo</p>
+                    <p v-if="opcoesGastosFixos.length === 0" class="text-xs text-slate-400 italic text-center py-1">Nenhuma opção.</p>
+                    <ul class="space-y-1 mb-3">
+                        <li v-for="opcao in opcoesGastosFixos" :key="opcao" class="flex justify-between items-center text-sm bg-white p-2 rounded border border-slate-200/80">
+                            <span>{{ opcao }}</span>
+                            <button @click="removeOpcao(opcao)" class="text-slate-400 hover:text-rose-600" title="Excluir opção"><i class="fas fa-trash"></i></button>
+                        </li>
+                    </ul>
+                    <div class="flex gap-2">
+                        <input type="text" v-model="novaOpcao" placeholder="Nova opção" class="min-w-0 flex-1 p-2 text-sm border border-slate-200 rounded outline-none focus:ring-2 focus:ring-slate-400" @keyup.enter="addOpcao">
+                        <button @click="addOpcao" class="bg-slate-800 text-white px-3 rounded hover:bg-slate-700" title="Adicionar opção"><i class="fas fa-plus"></i></button>
+                    </div>
+                    <p class="text-[11px] text-slate-400 mt-2">Excluir uma opção não apaga gastos já lançados com esse nome.</p>
+                </div>
+            </div>
+
+            <!-- Gastos Pessoais da Caixinha -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 lg:col-span-2">
+                <div class="flex justify-between items-center border-b pb-2 mb-4">
+                    <h2 class="text-lg font-bold"><i class="fas fa-user mr-2 text-indigo-500"></i>Gastos Pessoais</h2>
+                    <span class="text-sm font-bold text-slate-900">{{ formatCurrency(totalPersonalComExtras) }}</span>
+                </div>
+
+                <p v-if="personalExpenses.length === 0 && weeklyExtrasList.length === 0" class="text-sm text-slate-400 italic text-center py-2 mb-2">Nenhum gasto pessoal adicionado.</p>
+                <div class="space-y-3 mb-4">
+                    <!-- Extras lançados nas semanas -->
+                    <div v-if="weeklyExtrasList.length > 0" class="rounded-xl border bg-indigo-50/50 border-indigo-200/80 p-3">
+                        <div class="flex justify-between items-baseline mb-2">
+                            <span class="text-xs font-semibold uppercase tracking-wide text-indigo-700"><i class="fas fa-calendar-day mr-1"></i>Extras das semanas</span>
+                            <span class="text-base font-bold text-slate-900">{{ formatCurrency(totalWeeklyExtra) }}</span>
+                        </div>
+                        <ul class="space-y-2">
+                            <li v-for="extra in weeklyExtrasList" :key="extra.key" class="text-sm bg-white p-2 rounded border border-indigo-100">
+                                <div class="flex justify-between items-center gap-2">
+                                    <span class="text-slate-800">{{ extra.nome }}</span>
+                                    <span class="font-semibold text-slate-900 shrink-0">{{ formatCurrency(extra.valor) }}</span>
+                                </div>
+                                <span class="inline-block mt-1.5 px-2 py-0.5 rounded-full border border-indigo-200 bg-indigo-50 text-[10px] font-semibold text-indigo-700">
+                                    semanal
+                                </span>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div v-for="grupo in personalGroups" :key="grupo.key" class="rounded-xl border bg-slate-50 border-slate-200 p-3">
+                        <div class="flex justify-between items-baseline mb-2">
+                            <span class="text-xs font-semibold uppercase tracking-wide text-slate-600"><i :class="grupo.icone" class="mr-1"></i>{{ grupo.nome }}</span>
+                            <span class="text-base font-bold text-slate-900">{{ formatCurrency(grupo.total) }}</span>
+                        </div>
+                        <ul class="space-y-2">
+                            <li v-if="grupo.itens.length === 0" class="text-xs text-slate-400 italic text-center py-1">Vazio</li>
+                            <li v-for="gasto in grupo.itens" :key="gasto.id" class="text-sm bg-white p-2 rounded border border-slate-200/80">
+                                <div class="flex justify-between items-center gap-2">
+                                    <span class="text-slate-800">{{ gasto.nome }}</span>
+                                    <div class="flex items-center gap-3 shrink-0">
+                                        <span class="font-semibold text-slate-900">{{ formatCurrency(gasto.valor) }}</span>
+                                        <button @click="removePersonal(gasto.id)" class="text-slate-400 hover:text-rose-600"><i class="fas fa-trash"></i></button>
+                                    </div>
+                                </div>
+                                <button @click="alternarStatus(gasto)"
+                                    :title="gasto.status === 'pendente' ? 'Clique para marcar como já gasto' : 'Clique para voltar para futuro'"
+                                    :class="gasto.status === 'pendente' ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100' : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'"
+                                    class="mt-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-semibold whitespace-nowrap transition-colors">
+                                    <i class="fas fa-arrows-rotate mr-1"></i>{{ gasto.status === 'pendente' ? 'Futuro' : 'Já gasto' }}
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 mb-2 text-xs">
+                    <button @click="newPersonalStatus = 'pendente'" :class="newPersonalStatus === 'pendente' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-white text-slate-500 border-slate-200'" class="px-3 py-1 rounded-full border font-semibold">Futuro</button>
+                    <button @click="newPersonalStatus = 'pago'" :class="newPersonalStatus === 'pago' ? 'bg-slate-100 text-slate-800 border-slate-300' : 'bg-white text-slate-500 border-slate-200'" class="px-3 py-1 rounded-full border font-semibold">Já gasto</button>
+                </div>
+                <div class="flex gap-2">
+                    <input type="text" v-model="newPersonalName" placeholder="Descrição" class="min-w-0 flex-1 p-2 text-sm border border-slate-200 rounded outline-none focus:ring-2 focus:ring-slate-400" @keyup.enter="addPersonal">
+                    <input type="number" v-model.number="newPersonalValue" placeholder="R$" class="w-20 p-2 text-sm border border-slate-200 rounded outline-none focus:ring-2 focus:ring-slate-400" @keyup.enter="addPersonal">
+                    <button @click="addPersonal" class="bg-slate-800 text-white px-3 rounded hover:bg-slate-700" title="Adicionar Gasto Pessoal"><i class="fas fa-plus"></i></button>
+                </div>
+            </div>
+
+            <!-- Gastos Investimentos -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 lg:col-span-2">
+                <div class="flex justify-between items-center border-b pb-2 mb-4">
+                    <h2 class="text-lg font-bold"><i class="fas fa-chart-line mr-2 text-emerald-600"></i>Saídas de Investimento</h2>
+                    <span class="text-sm font-bold text-slate-900">{{ formatCurrency(totalSaidasInvestimento) }}</span>
+                </div>
+
+                <p v-if="investimentosGastos.length === 0 && saidasExcedente.length === 0" class="text-sm text-slate-400 italic text-center py-2 mb-2">Nenhuma saída registrada.</p>
+                <div class="space-y-3 mb-4">
+                    <!-- Excedente automático da caixinha -->
+                    <div v-if="saidasExcedente.length > 0" class="rounded-xl border bg-rose-50/60 border-rose-200 p-3">
+                        <div class="flex justify-between items-baseline mb-2">
+                            <span class="text-xs font-semibold uppercase tracking-wide text-rose-700"><i class="fas fa-arrow-trend-up mr-1"></i>Excedente da caixinha</span>
+                            <span class="text-base font-bold text-rose-700">{{ formatCurrency(excedenteCaixinha) }}</span>
+                        </div>
+                        <ul class="space-y-2">
+                            <li v-for="exc in saidasExcedente" :key="exc.key" class="text-sm bg-white p-2 rounded border border-rose-100">
+                                <div class="flex justify-between items-center gap-2">
+                                    <span class="text-slate-800">{{ exc.nome }}</span>
+                                    <span class="font-semibold text-slate-900 shrink-0">{{ formatCurrency(exc.valor) }}</span>
+                                </div>
+                                <span class="inline-block mt-1.5 px-2 py-0.5 rounded-full border border-rose-200 bg-rose-50 text-[10px] font-semibold text-rose-700">
+                                    automático
+                                </span>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div v-for="grupo in invGroups" :key="grupo.key" class="rounded-xl border bg-slate-50 border-slate-200 p-3">
+                        <div class="flex justify-between items-baseline mb-2">
+                            <span class="text-xs font-semibold uppercase tracking-wide text-slate-600"><i :class="grupo.icone" class="mr-1"></i>{{ grupo.nome }}</span>
+                            <span class="text-base font-bold text-slate-900">{{ formatCurrency(grupo.total) }}</span>
+                        </div>
+                        <ul class="space-y-2">
+                            <li v-if="grupo.itens.length === 0" class="text-xs text-slate-400 italic text-center py-1">Vazio</li>
+                            <li v-for="inv in grupo.itens" :key="inv.id" class="text-sm bg-white p-2 rounded border border-slate-200/80">
+                                <div class="flex justify-between items-center gap-2">
+                                    <span class="text-slate-800">{{ inv.nome }}</span>
+                                    <div class="flex items-center gap-3 shrink-0">
+                                        <span class="font-semibold text-slate-900">{{ formatCurrency(inv.valor) }}</span>
+                                        <button @click="removeInv(inv.id)" class="text-slate-400 hover:text-rose-600"><i class="fas fa-trash"></i></button>
+                                    </div>
+                                </div>
+                                <button @click="alternarStatus(inv)"
+                                    :title="inv.status === 'pendente' ? 'Clique para marcar como já saiu' : 'Clique para voltar para pendente'"
+                                    :class="inv.status === 'pendente' ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'"
+                                    class="mt-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-semibold whitespace-nowrap transition-colors">
+                                    <i class="fas fa-arrows-rotate mr-1"></i>{{ inv.status === 'pendente' ? 'Pendente' : 'Já saiu' }}
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="flex gap-2 mb-2 text-xs">
+                    <button @click="novoInvStatus = 'pendente'" :class="novoInvStatus === 'pendente' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-white text-slate-500 border-slate-200'" class="px-3 py-1 rounded-full border font-semibold">Pendente</button>
+                    <button @click="novoInvStatus = 'pago'" :class="novoInvStatus === 'pago' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-white text-slate-500 border-slate-200'" class="px-3 py-1 rounded-full border font-semibold">Já saiu</button>
+                </div>
+                <div class="flex gap-2">
+                    <input type="text" v-model="novoInvNome" placeholder="Descrição" class="min-w-0 flex-1 p-2 text-sm border border-slate-200 rounded outline-none focus:ring-2 focus:ring-slate-400" @keyup.enter="addInv">
+                    <input type="number" v-model.number="novoInvValor" placeholder="R$" class="w-20 p-2 text-sm border border-slate-200 rounded outline-none focus:ring-2 focus:ring-slate-400" @keyup.enter="addInv">
+                    <button @click="addInv" class="bg-slate-800 text-white px-3 rounded hover:bg-slate-700"><i class="fas fa-plus"></i></button>
+                </div>
+            </div>
+
         </div>
         <!-- Tela de login (só aparece se o banco estiver configurado) -->
-        <div v-if="precisaLogin" class="fixed inset-0 !mt-0 bg-neutral-100 z-50 flex items-center justify-center p-4">
-            <form @submit.prevent="entrar" class="bg-white p-6 rounded-xl shadow-sm border border-neutral-200 w-full max-w-sm space-y-4">
-                <h2 class="text-lg font-bold"><i class="fas fa-lock mr-2 text-emerald-500"></i>Entrar</h2>
+        <div v-if="precisaLogin" class="fixed inset-0 !mt-0 bg-slate-100 z-50 flex items-center justify-center p-4">
+            <form @submit.prevent="entrar" class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 w-full max-w-sm space-y-4">
+                <h2 class="text-lg font-bold"><i class="fas fa-lock mr-2 text-emerald-600"></i>Entrar</h2>
                 <div>
-                    <label class="block text-sm text-neutral-600 mb-1">E-mail</label>
+                    <label class="block text-sm text-slate-600 mb-1">E-mail</label>
                     <input type="email" v-model="loginEmail" required autocomplete="username"
-                        class="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500 outline-none">
+                        class="w-full p-2 border border-slate-200 rounded focus:ring-2 focus:ring-slate-400 outline-none">
                 </div>
                 <div>
-                    <label class="block text-sm text-neutral-600 mb-1">Senha</label>
+                    <label class="block text-sm text-slate-600 mb-1">Senha</label>
                     <input type="password" v-model="loginSenha" required autocomplete="current-password"
-                        class="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500 outline-none">
+                        class="w-full p-2 border border-slate-200 rounded focus:ring-2 focus:ring-slate-400 outline-none">
                 </div>
-                <p v-if="loginErro" class="text-sm text-red-600">{{ loginErro }}</p>
+                <p v-if="loginErro" class="text-sm text-rose-600">{{ loginErro }}</p>
                 <button type="submit" :disabled="carregandoLogin"
-                    class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-lg transition-colors disabled:opacity-60">
+                    class="w-full bg-slate-800 hover:bg-slate-700 text-white font-semibold py-2 rounded-lg transition-colors disabled:opacity-60">
                     {{ carregandoLogin ? 'Entrando...' : 'Entrar' }}
                 </button>
-                <button type="button" @click="modoLocal = true" class="w-full text-xs text-neutral-400 hover:text-neutral-600 underline">
+                <button type="button" @click="modoLocal = true" class="w-full text-xs text-slate-400 hover:text-slate-600 underline">
                     Continuar só neste navegador (sem sincronizar)
                 </button>
             </form>
@@ -330,10 +517,10 @@
                 );
                 const syncInfo = computed(() => {
                     const mapa = {
-                        pendente:      { texto: 'salvando…',                    cor: 'text-amber-600',   icone: 'fas fa-cloud-arrow-up' },
-                        sincronizando: { texto: 'sincronizando…',               cor: 'text-amber-600',   icone: 'fas fa-rotate fa-spin' },
-                        salvo:         { texto: 'sincronizado',                 cor: 'text-emerald-600', icone: 'fas fa-check' },
-                        erro:          { texto: 'não sincronizou, salvo só neste navegador', cor: 'text-red-600', icone: 'fas fa-triangle-exclamation' }
+                        pendente:      { texto: 'salvando…',                    cor: 'text-neutral-600', icone: 'fas fa-cloud-arrow-up' },
+                        sincronizando: { texto: 'sincronizando…',               cor: 'text-neutral-600', icone: 'fas fa-rotate fa-spin' },
+                        salvo:         { texto: 'sincronizado',                 cor: 'text-emerald-700', icone: 'fas fa-check' },
+                        erro:          { texto: 'não sincronizou, salvo só neste navegador', cor: 'text-rose-600', icone: 'fas fa-triangle-exclamation' }
                     };
                     return mapa[statusSync.value] || { texto: 'conectado', cor: 'text-neutral-500', icone: 'fas fa-cloud' };
                 });
@@ -478,14 +665,63 @@
                     item.status = item.status === 'pendente' ? 'pago' : 'pendente';
                 };
 
-                const fixedGroups = computed(() => {
-                    const futuros = fixedExpenses.value.filter(x => x.status === 'pendente');
-                    const gastos = fixedExpenses.value.filter(x => x.status !== 'pendente');
+                const fixedFuturos = computed(() => fixedExpenses.value.filter(x => x.status === 'pendente'));
+                const fixedPagos = computed(() => fixedExpenses.value.filter(x => x.status !== 'pendente'));
+                const totalFixedFuturos = computed(() => somar(fixedFuturos.value));
+                const totalFixedPagos = computed(() => somar(fixedPagos.value));
+
+                const expandedFixedGroups = ref({});
+                const toggleFixedGroup = (key) => {
+                    expandedFixedGroups.value[key] = !expandedFixedGroups.value[key];
+                };
+
+                const fixedPaidGrouped = computed(() => {
+                    const mapa = new Map();
+                    for (const item of fixedPagos.value) {
+                        const nome = (item.nome || '').trim();
+                        const key = nome.toLowerCase();
+                        if (!mapa.has(key)) {
+                            mapa.set(key, { key, nome, total: 0, itens: [] });
+                        }
+                        const grupo = mapa.get(key);
+                        grupo.itens.push(item);
+                        grupo.total += Number(item.valor || 0);
+                    }
+                    return [...mapa.values()];
+                });
+
+                // --- GASTOS PESSOAIS ---
+                const personalExpenses = ref([]);
+                const newPersonalName = ref('');
+                const newPersonalValue = ref('');
+                const newPersonalStatus = ref('pendente');
+
+                const addPersonal = () => {
+                    const nome = newPersonalName.value.trim();
+                    if (nome && newPersonalValue.value !== '') {
+                        personalExpenses.value.push({
+                            id: Date.now(),
+                            nome,
+                            valor: Number(newPersonalValue.value),
+                            status: newPersonalStatus.value
+                        });
+                        newPersonalName.value = '';
+                        newPersonalValue.value = '';
+                    }
+                };
+
+                const removePersonal = (id) => {
+                    personalExpenses.value = personalExpenses.value.filter(x => x.id !== id);
+                };
+
+                const totalPersonal = computed(() => somar(personalExpenses.value));
+
+                const personalGroups = computed(() => {
+                    const futuros = personalExpenses.value.filter(x => x.status === 'pendente');
+                    const gastos = personalExpenses.value.filter(x => x.status !== 'pendente');
                     return [
-                        { key: 'pendente', nome: 'Futuros', icone: 'fas fa-hourglass-half', itens: futuros, total: somar(futuros),
-                          box: 'bg-amber-50 border-amber-200', titulo: 'text-amber-700', valor: 'text-amber-700' },
-                        { key: 'pago', nome: 'Já gastos', icone: 'fas fa-circle-check', itens: gastos, total: somar(gastos),
-                          box: 'bg-red-50 border-red-100', titulo: 'text-red-700', valor: 'text-red-600' }
+                        { key: 'pendente', nome: 'Futuros', icone: 'fas fa-hourglass-half', itens: futuros, total: somar(futuros) },
+                        { key: 'pago', nome: 'Já gastos', icone: 'fas fa-circle-check', itens: gastos, total: somar(gastos) }
                     ];
                 });
 
@@ -554,7 +790,7 @@
 
                 const weekCalculations = computed(() => {
                     let results = [];
-                    let saldoAtual = totalCaixinha.value - totalFixed.value;
+                    let saldoAtual = Math.max(0, Number(totalCaixinha.value || 0) - totalFixed.value - totalPersonal.value);
 
                     for (let i = 0; i < weeks.value.length; i++) {
                         let semanasRestantes = weeks.value.length - i;
@@ -574,7 +810,7 @@
                     return results;
                 });
 
-                // --- INVESTIMENTOS ---
+                // --- INVESTIMENTOS & EXCEDENTE DA CAIXINHA ---
                 const investimentosGastos = ref([]);
                 const novoInvNome = ref('');
                 const novoInvValor = ref('');
@@ -599,17 +835,104 @@
                     const pendentes = investimentosGastos.value.filter(x => x.status === 'pendente');
                     const saidas = investimentosGastos.value.filter(x => x.status !== 'pendente');
                     return [
-                        { key: 'pendente', nome: 'Pendentes', icone: 'fas fa-hourglass-half', itens: pendentes, total: somar(pendentes),
-                          box: 'bg-amber-50 border-amber-200', titulo: 'text-amber-700', valor: 'text-amber-700' },
-                        { key: 'pago', nome: 'Já saiu', icone: 'fas fa-circle-check', itens: saidas, total: somar(saidas),
-                          box: 'bg-blue-50 border-blue-100', titulo: 'text-blue-700', valor: 'text-blue-600' }
+                        { key: 'pendente', nome: 'Pendentes', icone: 'fas fa-hourglass-half', itens: pendentes, total: somar(pendentes) },
+                        { key: 'pago', nome: 'Já saiu', icone: 'fas fa-circle-check', itens: saidas, total: somar(saidas) }
                     ];
                 });
 
-                // Cálculo original: desconta todas as saídas (pendentes e já saídas)
+                // Tudo que ultrapassar a caixinha (fixos + pessoais + extras semanais) sai automaticamente dos investimentos
+                const weeklyExtrasList = computed(() => {
+                    return weeklyExpenses.value
+                        .map((valor, index) => ({
+                            key: `sem-${index}`,
+                            nome: `Extra — Semana ${index + 1}`,
+                            valor: Number(valor || 0)
+                        }))
+                        .filter(item => item.valor > 0);
+                });
+                const totalWeeklyExtra = computed(() => {
+                    return weeklyExpenses.value.reduce((acc, v) => acc + Number(v || 0), 0);
+                });
+                const totalPersonalComExtras = computed(() => totalPersonal.value + totalWeeklyExtra.value);
+
+                const arredondar2 = (v) => Math.round(v * 100) / 100;
+                const excedenteFixos = computed(() => arredondar2(Math.max(0, totalFixed.value - Number(totalCaixinha.value || 0))));
+                const caixinhaAposFixos = computed(() => Math.max(0, Number(totalCaixinha.value || 0) - totalFixed.value));
+                const excedentePessoais = computed(() => arredondar2(Math.max(0, totalPersonalComExtras.value - caixinhaAposFixos.value)));
+                const excedenteCaixinha = computed(() => arredondar2(excedenteFixos.value + excedentePessoais.value));
+
+                const saidasExcedente = computed(() => {
+                    const lista = [];
+                    if (excedenteFixos.value > 0) {
+                        lista.push({ key: 'fixos', nome: 'Excedente — Gastos Fixos', valor: excedenteFixos.value });
+                    }
+                    if (excedentePessoais.value > 0) {
+                        lista.push({ key: 'pessoais', nome: 'Excedente — Gastos Pessoais', valor: excedentePessoais.value });
+                    }
+                    return lista;
+                });
+
+                const totalInvManual = computed(() => somar(investimentosGastos.value));
+                const totalSaidasInvestimento = computed(() => excedenteCaixinha.value + totalInvManual.value);
+
+                // Desconta saídas manuais + excedente da caixinha
                 const saldoInvestimento = computed(() => {
-                    let spent = investimentosGastos.value.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
-                    return investimentoInicial.value - spent;
+                    return Number(investimentoInicial.value || 0) - totalSaidasInvestimento.value;
+                });
+
+                // --- TOTAL DO MÊS & META 30 / 40 / 30 ---
+                const totalDisponivelMes = computed(() => {
+                    return Number(totalGastosSemanal.value || 0) + Number(totalCaixinha.value || 0) + Number(investimentoInicial.value || 0);
+                });
+
+                const regra304030 = computed(() => {
+                    const total = totalDisponivelMes.value;
+                    const pessoalTotal = totalPersonalComExtras.value + Number(totalGastosSemanal.value || 0);
+                    const itens = [
+                        {
+                            key: 'fixo',
+                            nome: 'Fixo',
+                            metaPct: 30,
+                            meta: total * 0.30,
+                            atual: totalFixed.value,
+                            estourado: totalFixed.value > total * 0.30,
+                            statusTexto: totalFixed.value > total * 0.30 ? 'acima da meta' : 'dentro da meta',
+                            corBarra: 'bg-amber-500',
+                            detalhe: 'Gastos fixos'
+                        },
+                        {
+                            key: 'pessoal',
+                            nome: 'Pessoal',
+                            metaPct: 40,
+                            meta: total * 0.40,
+                            atual: pessoalTotal,
+                            estourado: pessoalTotal > total * 0.40,
+                            statusTexto: pessoalTotal > total * 0.40 ? 'acima da meta' : 'dentro da meta',
+                            corBarra: 'bg-indigo-500',
+                            detalhe: 'Pessoais + semanal'
+                        },
+                        {
+                            key: 'investimentos',
+                            nome: 'Investimentos',
+                            metaPct: 30,
+                            meta: total * 0.30,
+                            atual: saldoInvestimento.value,
+                            estourado: saldoInvestimento.value < total * 0.30,
+                            statusTexto: saldoInvestimento.value < total * 0.30 ? 'abaixo da meta' : 'dentro da meta',
+                            corBarra: 'bg-emerald-600',
+                            detalhe: 'Saldo em investimentos'
+                        }
+                    ];
+
+                    const positivos = itens.map(i => (total > 0 ? Math.max(0, (i.atual / total) * 100) : 0));
+                    const somaPositivos = positivos.reduce((acc, v) => acc + v, 0);
+                    const fator = somaPositivos > 100 ? 100 / somaPositivos : 1;
+
+                    return itens.map((item, idx) => ({
+                        ...item,
+                        pctAtual: total > 0 ? (item.atual / total) * 100 : 0,
+                        larguraBarra: positivos[idx] * fator
+                    }));
                 });
 
                 // --- MESES: SALVAR / CARREGAR (localStorage) ---
@@ -618,6 +941,7 @@
                     totalCaixinha: totalCaixinha.value,
                     investimentoInicial: investimentoInicial.value,
                     fixedExpenses: fixedExpenses.value,
+                    personalExpenses: personalExpenses.value,
                     investimentosGastos: investimentosGastos.value,
                     weeklyExpenses: weeklyExpenses.value
                 });
@@ -636,6 +960,7 @@
                     totalCaixinha: 800,
                     investimentoInicial: 1877,
                     fixedExpenses: [{ id: Date.now(), nome: 'Assinaturas (Spotify/Netflix)', valor: 67, status: 'pendente' }],
+                    personalExpenses: [],
                     investimentosGastos: [],
                     weeklyExpenses: []
                 });
@@ -652,8 +977,10 @@
                     investimentoInicial.value = d.investimentoInicial ?? 1877;
                     // Itens salvos antes das caixinhas não têm status: contam como já gastos
                     fixedExpenses.value = (d.fixedExpenses || []).map(f => ({ ...f, status: f.status || 'pago' }));
+                    personalExpenses.value = (d.personalExpenses || []).map(p => ({ ...p, status: p.status || 'pago' }));
                     investimentosGastos.value = (d.investimentosGastos || []).map(i => ({ ...i, status: i.status || 'pago' }));
                     weeklyExpenses.value = weeks.value.map((_, i) => Number(d.weeklyExpenses?.[i] || 0));
+                    expandedFixedGroups.value = {};
 
                     // Fotografia logo após carregar: só grava se você realmente mudar algo depois disso.
                     // Assim, apenas abrir o app ou trocar de mês nunca altera nem reenvia nada ao banco.
@@ -858,7 +1185,7 @@
 
                 // Qualquer alteração no mês aberto é salva automaticamente
                 watch(
-                    [totalGastosSemanal, totalCaixinha, investimentoInicial, fixedExpenses, investimentosGastos, weeklyExpenses],
+                    [totalGastosSemanal, totalCaixinha, investimentoInicial, fixedExpenses, personalExpenses, investimentosGastos, weeklyExpenses],
                     () => { salvarDados(); },
                     { deep: true }
                 );
@@ -866,6 +1193,9 @@
                 // --- FORMATADORES ---
                 const formatCurrency = (val) => {
                     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+                };
+                const formatPercent = (val) => {
+                    return `${Number(val || 0).toFixed(1).replace('.', ',')}%`;
                 };
                 const formatDate = (date) => {
                     return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
@@ -896,15 +1226,20 @@
 
                 return {
                     totalGastosSemanal, totalCaixinha, investimentoInicial,
+                    totalDisponivelMes, regra304030,
                     selectedKey, selectedMonthName, monthTabs, selecionarMes,
                     sbConfigurado, usuario, precisaLogin, modoLocal, syncInfo, statusSync, ultimoErro, avisoConfig,
                     loginEmail, loginSenha, loginErro, carregandoLogin, entrar, sair,
                     fixedExpenses, newFixedName, newFixedValue, newFixedStatus, addFixed, removeFixed, totalFixed, opcoesGastosFixos,
+                    fixedFuturos, totalFixedFuturos, totalFixedPagos, fixedPaidGrouped, expandedFixedGroups, toggleFixedGroup,
+                    personalExpenses, newPersonalName, newPersonalValue, newPersonalStatus, addPersonal, removePersonal, totalPersonal, personalGroups,
+                    weeklyExtrasList, totalWeeklyExtra, totalPersonalComExtras,
                     mostrarOpcoes, novaOpcao, addOpcao, removeOpcao,
-                    fixedGroups, invGroups, alternarStatus, novoInvStatus,
+                    invGroups, alternarStatus, novoInvStatus,
+                    excedenteCaixinha, saidasExcedente, totalSaidasInvestimento,
                     weekCalculations, weeklyExpenses, saldoPorSemana, qtdSemanasFuturas, totalSemanasFuturas,
                     investimentosGastos, novoInvNome, novoInvValor, addInv, removeInv, saldoInvestimento,
-                    formatCurrency, formatDate
+                    formatCurrency, formatPercent, formatDate
                 };
             }
         }).mount('#app');
